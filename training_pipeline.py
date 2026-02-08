@@ -27,6 +27,7 @@ class TRAINING_CONFIG:
         'num_epochs': 200,
         'warmup_epochs': 10,
         'validate_every': 1,
+        'max_grad_norm' : 1,
         'optimizer_class': SGD(           
         ),
         'optimizer_config':{
@@ -74,7 +75,7 @@ class trainer:
             **self.config.MAIN['scheduler_config']
         )
         self.loss_fn = config.MAIN['loss_fn']
-        self.train_loader, self.validation_loader, self.test_loader = self._get_dataloaders()
+        self.train_dl, self.val_dl, self.test_dl = self._get_dataloaders()
 
     def __seed__(self):
         '''Set random seeds for reproducibility'''
@@ -90,18 +91,75 @@ class trainer:
         self.__seed__()
         splits = self.config.DATASET['splits']
         train_len = splits[0] * len(self.dataset)
-        train_loader = DataLoader(
-            self.dataset,
+        val_len = splits[1] * len(self.dataset)
+        test_len = len(self.dataset) - train_len - val_len
+        train_ds, val_ds, test_ds = random_split(
+            self.dataset, [train_len, val_len, test_len]
+        )
+        print(
+            f'<<<< dataset splits have been made >>>>'
+            f'<<<< train dataset length -> {train_len} >>>>'
+            f'<<<< validation dataset length -> {val_len} >>>>'
+            f'<<<< test dataset length -> {test_len} >>>>'
+        )
+        train_dl = DataLoader(
+            train_ds,
             **self.config['DATASET']['dataset_config']
         )
+        val_dl = DataLoader(
+            val_ds,
+            **self.config['DATASET']['dataset_config']
+        )
+        test_dl = DataLoader(
+            test_ds,
+            **self.config['DATASET']['dataset_config'],
 
-    def train(self, input):
+        )
+
+        return train_dl, val_dl, test_dl
+
+    def train(self):
         '''main training loop, call every epoch'''
-        self.optimizer.zero_grad()
-        loss = self.loss_fn(self.model(input), output)
-        loss.backward()
+        self.model.train()
+        train_loss = 0
+        correct = 0
+        total = 0
+        grad_norm_sum = 0
+        clip_count = 0
+        max_norm = self.config.MAIN['max_grad_norm']
+        for batch_idx, (inputs, targets) in enumerate(self.train_dl):
+            inputs = inputs.to(self.config.device)
+            targets = targets.to(self.config.device)
+            self.optimizer.zero_grad()
+            outs = self.model(inputs)
+            loss = self.loss_fn(outs, targets)
+            loss.backward()
+            if self.config.MAIN['max_grad_norm'] is not None:
+                total_norm = torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(),
+                    max_norm=max_norm
+                )
+                grad_norm_sum += total_norm.item()
+                if total_norm.item() > max_norm:
+                    clip_count = 1
+            self.optimizer.step()   
+            train_loss += loss.item()
 
+            # calculate accuracy
+            preds = outs.argmax(1)
+            total += targets.size(0)
+            correct += (preds).eq(targets).sum().item()
+        num_batches = len(self.train_dl)
+        train_metrics = {
+            'train_loss': train_loss / num_batches,
+            'train_accuracy': correct/total * 100.
+        }
 
+        if max_norm is not None:
+            train_metrics['mean_grad_norm'] = grad_norm_sum / num_batches
+            train_metrics['gradient_clipping_ratio'] = clip_count / num_batches
+        return train_metrics
+    
     def validate(self):
         '''call after training at config.['MAIN']['validate_every'] frequency'''
         ...
