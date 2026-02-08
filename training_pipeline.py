@@ -22,11 +22,12 @@ class TRAINING_CONFIG:
     run: int = 1
     device: str = 'cuda'
     MAIN: Dict = {
+        'loss_fn': nn.CrossEntropyLoss,
         'scheduler_class': CosineAnnealingLR,
         'num_epochs': 200,
         'warmup_epochs': 10,
-        'optimizer_class': SGD(
-            
+        'validate_every': 1,
+        'optimizer_class': SGD(           
         ),
         'optimizer_config':{
             'lr':1e-2,
@@ -62,10 +63,25 @@ class trainer:
         )
 
     def _get_dataloaders(self):
+        '''handles dataloading and seeding'''
         ...
     def train(self):
+        '''main training loop, call every epoch'''
         ...
     def validate(self):
+        '''call after training at config.['MAIN']['validate_every'] frequency'''
         ...
     def log(self):
+        '''call in train, validate and test to log metrics'''
         ...
+    def test(self):
+        '''call after training is finished to test'''
+        ...
+    def fit(self):
+        '''
+        calls the following methods
+            -> train
+            -> validate
+            for the specified number of epochs
+        and finally 
+        '''
