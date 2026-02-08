@@ -1,3 +1,3 @@
-git add .
-git commit -m "pipeline updated along with imports"
+git add 'C:\Users\Asus\Desktop\SLD\SLD_MAHE\training_pipeline.py'
+git commit -m "pipeline updated to have better skeleton"
 git push

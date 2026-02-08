@@ -21,7 +21,8 @@ class TRAINING_CONFIG:
     seed: int = 42
     run: int = 1
     device: str = 'cuda' if torch.cuda.is_available else 'cpu'
-    MAIN: Dict = {
+    MAIN: Dict = field(
+        default_factory=lambda:{
         'loss_fn': nn.CrossEntropyLoss,
         'num_epochs': 200,
         'warmup_epochs': 10,
@@ -40,16 +41,19 @@ class TRAINING_CONFIG:
             'T_max':200,
             'eta_Min': 1e-4
         }
-    }
-    DATASET: Dict = {
-        'batch_size': 512,
-        'num_workers': 2,
-    }
-    WANDB: Dict = {
+    })
+    DATASET: Dict = field(default_factory=lambda:{
+        'splits': [0.7, 0.25, 0.05],
+        'dataset_config': {
+            'batch_size': 512,
+            'num_workers': 2,
+            'shuffle' : True
+        }
+    })
+    WANDB: Dict = field(default_factory=lambda:{
         'project_name': 'Sign language detection',
-        'entity': None,
-        'run_name': f'SLD-training-{run}'
-    }
+        'entity': None
+    })
 
 class trainer:
     def __init__(    
@@ -69,13 +73,35 @@ class trainer:
             self.optimizer, 
             **self.config.MAIN['scheduler_config']
         )
+        self.loss_fn = config.MAIN['loss_fn']
+        self.train_loader, self.validation_loader, self.test_loader = self._get_dataloaders()
+
+    def __seed__(self):
+        '''Set random seeds for reproducibility'''
+        random.seed(self.config.seed)
+        np.random.seed(self.config.seed)
+        torch.manual_seed(self.config.seed)
+        torch.cuda.manual_seed_all(self.config.seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
     def _get_dataloaders(self):
         '''handles dataloading and seeding'''
-        ...
-    def train(self):
+        self.__seed__()
+        splits = self.config.DATASET['splits']
+        train_len = splits[0] * len(self.dataset)
+        train_loader = DataLoader(
+            self.dataset,
+            **self.config['DATASET']['dataset_config']
+        )
+
+    def train(self, input):
         '''main training loop, call every epoch'''
-        ...
+        self.optimizer.zero_grad()
+        loss = self.loss_fn(self.model(input), output)
+        loss.backward()
+
+
     def validate(self):
         '''call after training at config.['MAIN']['validate_every'] frequency'''
         ...
