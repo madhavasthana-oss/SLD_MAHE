@@ -127,22 +127,31 @@ class trainer:
         grad_norm_sum = 0
         clip_count = 0
         max_norm = self.config.MAIN['max_grad_norm']
-        for batch_idx, (inputs, targets) in enumerate(self.train_dl):
+        for batch_idx, (inputs, targets) in enumerate(tqdm(self.train_dl, desc = 'Batch')):
+            # move inputs to device, this is essential to ensure fast training
             inputs = inputs.to(self.config.device)
             targets = targets.to(self.config.device)
+
+            # main sequence, borrowed directly from the example in torch's sgd source
             self.optimizer.zero_grad()
             outs = self.model(inputs)
             loss = self.loss_fn(outs, targets)
             loss.backward()
+
+            # gradient norm clipping
             if self.config.MAIN['max_grad_norm'] is not None:
                 total_norm = torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(),
                     max_norm=max_norm
                 )
+                # update count
                 grad_norm_sum += total_norm.item()
                 if total_norm.item() > max_norm:
                     clip_count = 1
+
             self.optimizer.step()   
+
+            # begin logging of loss and other metrics
             train_loss += loss.item()
 
             # calculate accuracy
@@ -152,17 +161,40 @@ class trainer:
         num_batches = len(self.train_dl)
         train_metrics = {
             'train_loss': train_loss / num_batches,
-            'train_accuracy': correct/total * 100.
+            'train_acc': (correct/total) * 100.
         }
 
         if max_norm is not None:
             train_metrics['mean_grad_norm'] = grad_norm_sum / num_batches
             train_metrics['gradient_clipping_ratio'] = clip_count / num_batches
+        
         return train_metrics
     
     def validate(self):
         '''call after training at config.['MAIN']['validate_every'] frequency'''
-        ...
+        self.model.eval()
+        val_loss = 0
+        val_correct = 0
+        total = 0
+        with torch.no_grad():
+            for batch_idx, (inputs, targets) in enumerate(tqdm(self.val_dl, dexc = 'batch')):
+                outputs = self.model(inputs)
+                loss = self.loss_fn(outputs, targets)
+                
+                val_loss += loss.item()
+                total += targets.size()
+                predictions = outputs.argmax(1)
+                val_correct += predictions.eq(targets).sum().item()
+
+        num_batches = len(self.val_dl)        
+        val_accuracy = 100. * (val_correct/total)
+        loss = val_loss / num_batches
+
+        return {
+            'val_loss':loss,
+            'val_acc':val_accuracy
+        }
+
     def log(self):
         '''call in train, validate and test to log metrics'''
         ...
