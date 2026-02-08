@@ -27,6 +27,6 @@ class SLD(nn.Module):
         return x
 
 
- def freeze_backbone(self):
+def freeze_backbone(self):
     for p in self.backbone.parameters():
         p.requires_grad = False
