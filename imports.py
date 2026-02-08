@@ -16,3 +16,5 @@ from torch.optim.lr_scheduler import (
 )
 from typing import Dict
 from torch.optim.sgd import SGD
+import torch.nn as nn
+from torchvision import models
