@@ -20,10 +20,9 @@ class TRAINING_CONFIG:
     '''
     seed: int = 42
     run: int = 1
-    device: str = 'cuda'
+    device: str = 'cuda' if torch.cuda.is_available else 'cpu'
     MAIN: Dict = {
         'loss_fn': nn.CrossEntropyLoss,
-        'scheduler_class': CosineAnnealingLR,
         'num_epochs': 200,
         'warmup_epochs': 10,
         'validate_every': 1,
@@ -35,16 +34,21 @@ class TRAINING_CONFIG:
             'nesterov':True,
             'dampening':False,
             'weight_decay':0.0005
+        },
+        'scheduler_class': CosineAnnealingLR,
+        'scheduler_config':{
+            'T_max':200,
+            'eta_Min': 1e-4
         }
     }
     DATASET: Dict = {
-        'batch size': 512,
+        'batch_size': 512,
         'num_workers': 2,
     }
     WANDB: Dict = {
-        'project-name': 'Sign language detection',
+        'project_name': 'Sign language detection',
         'entity': None,
-        'run name': f'SLD-training-{run}'
+        'run_name': f'SLD-training-{run}'
     }
 
 class trainer:
@@ -60,6 +64,10 @@ class trainer:
         self.optimizer = config.MAIN['optimizer_class'](
             model.parameters(), 
             **config.MAIN['optimizer_config']
+        )
+        self.scheduler = config.MAIN['scheduler_class'](
+            self.optimizer, 
+            **self.config.MAIN['scheduler_config']
         )
 
     def _get_dataloaders(self):
