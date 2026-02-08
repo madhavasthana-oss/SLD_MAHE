@@ -25,7 +25,9 @@ class TRAINING_CONFIG:
         'scheduler_class': CosineAnnealingLR,
         'num_epochs': 200,
         'warmup_epochs': 10,
-        'optimizer_class': SGD,
+        'optimizer_class': SGD(
+            
+        ),
         'optimizer_config':{
             'lr':1e-2,
             'momentum':0.9,
@@ -43,3 +45,27 @@ class TRAINING_CONFIG:
         'entity': None,
         'run name': f'SLD-training-{run}'
     }
+
+class trainer:
+    def __init__(    
+        self,
+        config: TRAINING_CONFIG,
+        dataset: Dataset,
+        model: nn.Module
+    ):
+        self.config = config
+        self.dataset = dataset
+        self.model = model
+        self.optimizer = config.MAIN['optimizer_class'](
+            model.parameters(), 
+            **config.MAIN['optimizer_config']
+        )
+
+    def _get_dataloaders(self):
+        ...
+    def train(self):
+        ...
+    def validate(self):
+        ...
+    def log(self):
+        ...

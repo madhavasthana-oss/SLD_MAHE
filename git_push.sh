@@ -1,3 +1,3 @@
 git add .
-git commit -m "imports updated"
+git commit -m "pipeline updated along with imports"
 git push
