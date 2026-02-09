@@ -273,22 +273,6 @@ class trainer:
             f'{prefix}_loss': loss,
             f'{prefix}_acc': val_accuracy
         }
-        
-    def save_checkpoint(self, epoch, is_best=False):
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
-            'best_accuracy': self.best_accuracy,
-            'config': self.config
-        }
-        
-        if is_best:
-            torch.save(checkpoint, self.config.checkpoint)
-            tqdm.write(f'<<<< Saved best model with accuracy: {self.best_accuracy:.2f}% >>>>')
-        
-        torch.save(checkpoint, self.config.final_checkpoint)
 
     def load_checkpoint(self, checkpoint_path):
         '''load a saved checkpoint to resume training or for inference'''
@@ -309,21 +293,21 @@ class trainer:
         finally evaluates on test set
         '''
         wandb.init(
-           **self.config.WANDB,
-           config={
-               'seed': self.config.seed,
-               'run': self.config.run,
-               **self.config.MAIN,
-               'train_config': self.config.DATASET['train_config'],
-               'eval_config': self.config.DATASET['eval_config']
-           }
+        **self.config.WANDB,
+        config={
+            'seed': self.config.seed,
+            'run': self.config.run,
+            **self.config.MAIN,
+            'train_config': self.config.DATASET['train_config'],
+            'eval_config': self.config.DATASET['eval_config']
+        }
         )
         
         num_epochs = self.config.MAIN['num_epochs']
         validate_every = self.config.MAIN['validate_every']
         early_stopping_patience = self.config.MAIN['early_stopping_patience']
         
-        tqdm.write(f'\n<<<< Starting training for {num_epochs} epochs >>>>\n')
+        print(f'\n<<<< Starting training for {num_epochs} epochs >>>>\n')
         
         self.epoch_pbar = tqdm(range(num_epochs), desc='Epochs', position=0)
         
@@ -345,23 +329,17 @@ class trainer:
                     **val_metrics
                 })
                 
-                self.epoch_pbar.set_postfix({
+                # Update epoch bar postfix (in-place)
+                postfix_dict = {
                     'train_loss': f'{train_metrics["train_loss"]:.4f}',
                     'train_acc': f'{train_metrics["train_acc"]:.2f}%',
                     'val_loss': f'{val_metrics["val_loss"]:.4f}',
                     'val_acc': f'{val_metrics["val_acc"]:.2f}%',
                     'lr': f'{lr:.6f}'
-                })
+                }
+                self.epoch_pbar.set_postfix(postfix_dict)
                 
-                tqdm.write(
-                    f'Epoch {epoch+1}/{num_epochs} | '
-                    f'Train Loss: {train_metrics["train_loss"]:.4f} | '
-                    f'Train Acc: {train_metrics["train_acc"]:.2f}% | '
-                    f'Val Loss: {val_metrics["val_loss"]:.4f} | '
-                    f'Val Acc: {val_metrics["val_acc"]:.2f}% | '
-                    f'LR: {lr:.6f}'
-                )
-                
+                # Only print important events (best model, early stopping)
                 if current_acc > self.best_accuracy:
                     self.best_accuracy = current_acc
                     self.patience_counter = 0
@@ -370,13 +348,14 @@ class trainer:
                     self.patience_counter += 1
                     
                 if self.patience_counter >= early_stopping_patience:
-                    tqdm.write(f'\n<<<< Early stopping triggered after {epoch+1} epochs >>>>')
-                    tqdm.write(f'<<<< Best validation accuracy: {self.best_accuracy:.2f}% >>>>')
+                    self.epoch_pbar.write(f'\n<<<< Early stopping triggered after {epoch+1} epochs >>>>')
+                    self.epoch_pbar.write(f'<<<< Best validation accuracy: {self.best_accuracy:.2f}% >>>>')
                     break
             else:
                 self.scheduler.step()
                 lr = self.optimizer.param_groups[0]['lr']
                 
+                # Update epoch bar with just training metrics
                 self.epoch_pbar.set_postfix({
                     'train_loss': f'{train_metrics["train_loss"]:.4f}',
                     'train_acc': f'{train_metrics["train_acc"]:.2f}%',
@@ -393,8 +372,8 @@ class trainer:
         
         self.save_checkpoint(epoch, is_best=False)
         
-        tqdm.write(f'\n<<<< Training completed >>>>')
-        tqdm.write(f'<<<< Loading best model for final evaluation >>>>')
+        print(f'\n<<<< Training completed >>>>')
+        print(f'<<<< Loading best model for final evaluation >>>>')
         self.load_checkpoint(self.config.checkpoint)
         
         test_metrics = self.eval('test')
@@ -404,9 +383,9 @@ class trainer:
             'test_acc': test_metrics['test_acc']
         })
         
-        tqdm.write(f'\n<<<< Final Test Results >>>>')
-        tqdm.write(f'<<<< Test Loss: {test_metrics["test_loss"]:.4f} >>>>')
-        tqdm.write(f'<<<< Test Acc: {test_metrics["test_acc"]:.2f}% >>>>')
+        print(f'\n<<<< Final Test Results >>>>')
+        print(f'<<<< Test Loss: {test_metrics["test_loss"]:.4f} >>>>')
+        print(f'<<<< Test Acc: {test_metrics["test_acc"]:.2f}% >>>>')
         
         wandb.finish()
         
@@ -415,3 +394,19 @@ class trainer:
             'test_acc': test_metrics['test_acc'],
             'test_loss': test_metrics['test_loss']
         }
+
+    def save_checkpoint(self, epoch, is_best=False):
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+            'best_accuracy': self.best_accuracy,
+            'config': self.config
+        }
+        
+        if is_best:
+            torch.save(checkpoint, self.config.checkpoint)
+            self.epoch_pbar.write(f'<<<< Saved best model with accuracy: {self.best_accuracy:.2f}% >>>>')
+        
+        torch.save(checkpoint, self.config.final_checkpoint)
