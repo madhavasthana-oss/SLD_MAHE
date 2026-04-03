@@ -1,3 +1,3 @@
 git add .
-git commit -m "changed file structure and added frontend and backend folders"
+git commit -m "added detector api"
 git push
