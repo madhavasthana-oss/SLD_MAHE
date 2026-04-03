@@ -1,3 +1,3 @@
 git add .
-git commit -m "added detector api"
+git commit -m "modded yolo and pipeline"
 git push
