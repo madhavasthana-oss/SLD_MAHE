@@ -1,3 +1,3 @@
 git add .
-git commit -m "modded yolo and pipeline"
+git commit -m "modded pipeline"
 git push

@@ -410,3 +410,14 @@ class trainer:
             self.epoch_pbar.write(f'<<<< Saved best model with accuracy: {self.best_accuracy:.2f}% >>>>')
         
         torch.save(checkpoint, self.config.final_checkpoint)
+
+if __name__ == "__main__":
+    # Example usage
+    config = TRAINING_CONFIG()
+    dataset = ASLDataset(root_dir="data/asl_alphabet_train")
+    model = SLD(num_classes=26)
+    
+    trainer_instance = trainer(config, dataset, model)
+    results = trainer_instance.fit()
+    
+    print(results)
