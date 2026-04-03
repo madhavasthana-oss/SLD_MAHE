@@ -1,4 +1,4 @@
-from ultralytics import YOLO     # type: ignore
+from ultralytics import YOLO    
 
 class handDetector:
     def __init__(self, model_path="yolov8n.pt"):

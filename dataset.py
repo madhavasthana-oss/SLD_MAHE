@@ -7,8 +7,14 @@ from PIL import Image
 # Image size (same as your code)
 imageSize = 50
 
+# Define transforms (resize + tensor conversion)
+transform = transforms.Compose([
+    transforms.Resize((imageSize, imageSize)),
+    transforms.ToTensor()
+])
+
 class ASLDataset(Dataset):
-    def __init__(self, root_dir, transform=None):
+    def __init__(self, root_dir, transform=transform):
         self.root_dir = root_dir
         self.transform = transform
         self.image_paths = []
@@ -39,11 +45,6 @@ class ASLDataset(Dataset):
         return image, label
 
 
-# Define transforms (resize + tensor conversion)
-transform = transforms.Compose([
-    transforms.Resize((imageSize, imageSize)),
-    transforms.ToTensor()
-])
 
 # Load dataset
 dataset = ASLDataset(
