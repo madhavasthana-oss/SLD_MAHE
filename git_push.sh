@@ -1,3 +1,3 @@
 git add .
-git commit -m "added LaTeX document"
+git commit -m "changed file structure and added frontend and backend folders"
 git push
