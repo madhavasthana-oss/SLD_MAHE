@@ -1,17 +1,18 @@
 from imports import *
 
+
 class SLD(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, num_classes: int):
         super().__init__()
 
         backbone = models.resnet50(weights="DEFAULT")
 
-        # remove FC layer
+        # Remove the final FC layer — keep everything up to avgpool
         self.backbone = nn.Sequential(*list(backbone.children())[:-1])
 
         in_features = 2048
 
-        # architecture design
+        # Classification head
         self.head = nn.Sequential(
             nn.Flatten(),
             nn.LayerNorm(in_features),
@@ -27,5 +28,11 @@ class SLD(nn.Module):
         return x
 
     def freeze_backbone(self):
+        """Freeze all backbone parameters (useful for warm-up phase)."""
         for p in self.backbone.parameters():
             p.requires_grad = False
+
+    def unfreeze_backbone(self):
+        """Unfreeze backbone for full fine-tuning."""
+        for p in self.backbone.parameters():
+            p.requires_grad = True

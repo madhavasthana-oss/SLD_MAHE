@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 import cv2
 import torch
+from torchvision import transforms
 
 from YOLO import HandDetector
 from SLD import SLD
@@ -18,7 +19,6 @@ from SLD import SLD
 
 app = FastAPI()
 
-# allow frontend (api.html) to call backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,88 +33,94 @@ app.add_middleware(
 
 print("<<<< Loading models... >>>>")
 
-# YOLO detector
 detector = HandDetector(
-    model_path="yolov8n.pt",   # replace with your trained weights if needed
+    model_path="yolov8n.pt",
     target_classes=["hand"]
 )
 
-# ResNet classifier
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 model = SLD(num_classes=26)
-model.load_state_dict(torch.load("best_model.pth", map_location=device))
+model.load_state_dict(
+    torch.load("BEST_MODEL.pth", map_location=device)['model_state_dict']
+)
 model.to(device)
 model.eval()
 
 print(f"✅ Models loaded on {device}")
 
-
 # ─────────────────────────────────────────────
 # PREPROCESS FUNCTION
 # ─────────────────────────────────────────────
 
-def preprocess(img):
-    img = cv2.resize(img, (224, 224))
-    img = img / 255.0
-    img = np.transpose(img, (2, 0, 1))  # HWC → CHW
-    tensor = torch.tensor(img, dtype=torch.float32).unsqueeze(0)
+# ✅ Must match eval_transform used during training
+_preprocess = transforms.Compose([
+    transforms.ToPILImage(),
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],   # ImageNet stats — same as training
+        std=[0.229, 0.224, 0.225]
+    )
+])
+
+def preprocess(img: np.ndarray) -> torch.Tensor:
+    """Convert BGR numpy frame → normalised float tensor on device."""
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)   # YOLO gives BGR
+    tensor  = _preprocess(img_rgb).unsqueeze(0)       # (1, 3, 224, 224)
     return tensor.to(device)
 
-
 # ─────────────────────────────────────────────
-# HEALTH CHECK (optional but useful)
+# HEALTH CHECK
 # ─────────────────────────────────────────────
 
 @app.get("/")
 def health():
     return {"status": "ok", "message": "ASL backend running"}
 
-
 # ─────────────────────────────────────────────
-# MAIN PREDICTION ENDPOINT
+# PREDICTION ENDPOINT
 # ─────────────────────────────────────────────
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     try:
-        # ── Read image ───────────────────────
+        # Read image
         contents = await file.read()
-        np_arr = np.frombuffer(contents, np.uint8)
-        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        np_arr   = np.frombuffer(contents, np.uint8)
+        frame    = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
         if frame is None:
-            return {"letter": None, "confidence": 0, "bbox": None}
+            return {"letter": None, "confidence": 0.0, "bbox": None}
 
-        # ── YOLO detection ───────────────────
+        # YOLO detection
         detections = detector.detect(frame)
 
         if not detections:
-            return {"letter": None, "confidence": 0, "bbox": None}
+            return {"letter": None, "confidence": 0.0, "bbox": None}
 
-        # take largest hand
-        det = detections[0]
-        roi = det.roi
+        # Largest hand first (already sorted in HandDetector.detect)
+        det          = detections[0]
+        roi          = det.roi
         x1, y1, x2, y2 = det.bbox
 
-        # ── Classification ───────────────────
+        # Classification
         input_tensor = preprocess(roi)
 
         with torch.no_grad():
             output = model(input_tensor)
-            probs = torch.softmax(output, dim=1)
+            probs  = torch.softmax(output, dim=1)
             conf, pred = torch.max(probs, dim=1)
 
-        # map index → letter (A-Z)
+        # Map index → letter (A–Z)
         label = chr(ord('A') + pred.item())
 
-        # ── Response ─────────────────────────
         return {
-            "letter": label,
+            "letter":     label,
             "confidence": float(conf.item()),
-            "bbox": [x1, y1, x2 - x1, y2 - y1]
+            "bbox":       [x1, y1, x2 - x1, y2 - y1]
         }
 
     except Exception as e:
         print("Error:", str(e))
-        return {"letter": None, "confidence": 0, "bbox": None}
+        return {"letter": None, "confidence": 0.0, "bbox": None}
