@@ -60,7 +60,7 @@ class TRAINING_CONFIG:
             'lr':           1e-2,
             'momentum':     0.9,
             'nesterov':     True,
-            'dampening':    0,        # ✅ fixed: must be float/int, not bool
+            'dampening':    0,
             'weight_decay': 0.0005
         },
         'scheduler_class':  CosineAnnealingWithWarmup,
@@ -75,16 +75,16 @@ class TRAINING_CONFIG:
     final_checkpoint: str = 'FINAL_MODEL.pth'
 
     DATASET: Dict = field(default_factory=lambda: {
-        'root_dir': 'data/asl_alphabet_train',
+        'root_dir': '/root/.cache/kagglehub/datasets/grassknoted/asl-alphabet/versions/1/asl_alphabet_train/asl_alphabet_train',
         'splits':   [0.7, 0.2, 0.1],
         'train_config': {
-            'batch_size':  512,
+            'batch_size':  256,
             'num_workers': 2,
             'shuffle':     True,
-            'drop_last':   True
+            'drop_last':   False
         },
         'eval_config': {
-            'batch_size':  512,
+            'batch_size':  256,
             'num_workers': 2,
             'shuffle':     False,
             'drop_last':   False
@@ -120,10 +120,10 @@ class trainer:
 
         self.train_dl, self.val_dl, self.test_dl = self._get_dataloaders()
 
-        self.best_accuracy   = 0.0
+        self.best_accuracy    = 0.0
         self.patience_counter = 0
-        self.epoch_pbar      = None
-        self._best_model_saved = False   # guard for load_checkpoint
+        self.epoch_pbar       = None
+        self._best_model_saved = False
 
     # ── Seeding ───────────────────────────────────────────────────────────────
 
@@ -150,14 +150,17 @@ class trainer:
         val_len   = int(splits[1] * total)
         test_len  = total - train_len - val_len
 
-        train_ds, val_ds, test_ds = random_split(
+        train_subset, val_subset, test_subset = random_split(
             self.dataset, [train_len, val_len, test_len]
         )
 
-        # ✅ Apply different transforms to each split
-        train_ds.dataset = _TransformSubset(train_ds, train_transform)
-        val_ds.dataset   = _TransformSubset(val_ds,   eval_transform)
-        test_ds.dataset  = _TransformSubset(test_ds,  eval_transform)
+        # ✅ FIX: wrap the Subset objects themselves, don't overwrite .dataset
+        # Previously: train_ds.dataset = _TransformSubset(train_ds, ...) which
+        # caused the Subset's indices to point into a wrongly-sized dataset,
+        # triggering IndexError: list index out of range.
+        train_ds = _TransformSubset(train_subset, train_transform)
+        val_ds   = _TransformSubset(val_subset,   eval_transform)
+        test_ds  = _TransformSubset(test_subset,  eval_transform)
 
         print(
             f'<<<< Dataset splits >>>>\n'
@@ -229,8 +232,8 @@ class trainer:
         }
 
         if max_norm is not None:
-            train_metrics['mean_grad_norm']           = grad_norm_sum / num_batches
-            train_metrics['gradient_clipping_ratio']  = clip_count / num_batches
+            train_metrics['mean_grad_norm']          = grad_norm_sum / num_batches
+            train_metrics['gradient_clipping_ratio'] = clip_count / num_batches
 
         return train_metrics
 
@@ -380,10 +383,8 @@ class trainer:
 
         self.epoch_pbar.close()
 
-        # Save final model regardless
         self.save_checkpoint(last_epoch, is_best=False)
 
-        # ✅ Only load best checkpoint if it was actually saved
         print(f'\n<<<< Training complete >>>>')
         if self._best_model_saved:
             print(f'<<<< Loading best checkpoint for final evaluation >>>>')
@@ -420,7 +421,7 @@ class _TransformSubset(Dataset):
     Wraps a Subset so it can carry its own transform,
     independent of the parent dataset's transform.
     """
-    def __init__(self, subset, transform):
+    def __init__(self, subset: Subset, transform):
         self.subset    = subset
         self.transform = transform
 
@@ -429,15 +430,13 @@ class _TransformSubset(Dataset):
 
     def __getitem__(self, idx):
         image, label = self.subset[idx]
-        # image arrives as a tensor if parent already transformed —
-        # convert back to PIL for re-transformation
-        if not isinstance(image, torch.Tensor):
-            image = self.transform(image)
-        else:
-            # parent dataset applied eval_transform; undo norm then re-apply
-            # Simpler: just store raw PIL in ASLDataset (transform=None path)
-            image = self.transform(image)
-        return image, label
+        # subset[idx] returns a PIL image if the parent dataset has transform=None
+        # apply our split-specific transform here
+        if isinstance(image, torch.Tensor):
+            # shouldn't happen when parent dataset has transform=None,
+            # but guard anyway
+            return image, label
+        return self.transform(image), label
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
