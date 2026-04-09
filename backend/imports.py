@@ -8,7 +8,7 @@ from torch.utils.data import Dataset, DataLoader
 import matplotlib
 import seaborn
 from dataclasses import dataclass
-from tqdm.auto import tqdm
+from tqdm.notebook import tqdm
 from torch.optim.lr_scheduler import (
     SequentialLR,
     CosineAnnealingLR,
