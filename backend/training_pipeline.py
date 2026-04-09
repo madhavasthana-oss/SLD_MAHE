@@ -124,6 +124,7 @@ class trainer:
         self.patience_counter = 0
         self.epoch_pbar       = None
         self._best_model_saved = False
+        self.global_step       = 0
 
     # ── Seeding ───────────────────────────────────────────────────────────────
 
@@ -185,17 +186,9 @@ class trainer:
         grad_norm_sum = 0.0
         clip_count    = 0
         max_norm      = self.config.MAIN['max_grad_norm']
+        num_batches   = len(self.train_dl)
 
-        batch_pbar = tqdm(
-            enumerate(self.train_dl),
-            total=len(self.train_dl),
-            desc='Training',
-            leave=False,
-            position=1,
-            dynamic_ncols=True
-        )
-
-        for _, (inputs, targets) in batch_pbar:
+        for batch_idx, (inputs, targets) in enumerate(self.train_dl):
             inputs  = inputs.to(self.config.device)
             targets = targets.to(self.config.device)
 
@@ -219,14 +212,21 @@ class trainer:
             total      += targets.size(0)
             correct    += preds.eq(targets).sum().item()
 
-            batch_pbar.set_postfix({
-                'loss': f'{loss.item():.4f}',
-                'acc':  f'{100. * correct / total:.2f}%'
+            batch_log = {
+                'batch/train_loss': loss.item(),
+                'batch/train_acc':  100. * correct / total,
+            }
+            if max_norm is not None:
+                batch_log['batch/grad_norm'] = total_norm.item()
+            wandb.log(batch_log, step=self.global_step)
+            self.global_step += 1
+
+            self.epoch_pbar.set_postfix({
+                'batch':      f'{batch_idx + 1}/{num_batches}',
+                'batch_loss': f'{loss.item():.4f}',
+                'train_acc':  f'{100. * correct / total:.2f}%'
             })
 
-        batch_pbar.close()
-
-        num_batches   = len(self.train_dl)
         train_metrics = {
             'train_loss': train_loss / num_batches,
             'train_acc':  100. * correct / total
@@ -253,17 +253,10 @@ class trainer:
         else:
             raise ValueError("mode must be 'validate' or 'test'")
 
-        batch_pbar = tqdm(
-            enumerate(dl),
-            total=len(dl),
-            desc=mode.capitalize(),
-            leave=False,
-            position=1,
-            dynamic_ncols=True
-        )
+        num_batches = len(dl)
 
         with torch.no_grad():
-            for _, (inputs, targets) in batch_pbar:
+            for batch_idx, (inputs, targets) in enumerate(dl):
                 inputs  = inputs.to(self.config.device)
                 targets = targets.to(self.config.device)
                 outputs = self.model(inputs)
@@ -274,12 +267,12 @@ class trainer:
                 predictions  = outputs.argmax(1)
                 val_correct += predictions.eq(targets).sum().item()
 
-                batch_pbar.set_postfix({
-                    'loss': f'{loss.item():.4f}',
-                    'acc':  f'{100. * val_correct / total:.2f}%'
+                self.epoch_pbar.set_postfix({
+                    'phase':    mode,
+                    'batch':    f'{batch_idx + 1}/{num_batches}',
+                    'val_loss': f'{loss.item():.4f}',
+                    'val_acc':  f'{100. * val_correct / total:.2f}%'
                 })
-
-        batch_pbar.close()
 
         prefix = 'val' if mode == 'validate' else 'test'
         return {
@@ -350,9 +343,10 @@ class trainer:
                 lr           = self.optimizer.param_groups[0]['lr']
                 current_acc  = val_metrics['val_acc']
 
-                wandb.log({'epoch': epoch, 'lr': lr, **train_metrics, **val_metrics})
+                wandb.log({'epoch': epoch, 'lr': lr, **train_metrics, **val_metrics}, step=self.global_step)
 
                 self.epoch_pbar.set_postfix({
+                    'epoch':      f'{epoch + 1}',
                     'train_loss': f'{train_metrics["train_loss"]:.4f}',
                     'train_acc':  f'{train_metrics["train_acc"]:.2f}%',
                     'val_loss':   f'{val_metrics["val_loss"]:.4f}',
@@ -381,7 +375,7 @@ class trainer:
                     'train_acc':  f'{train_metrics["train_acc"]:.2f}%',
                     'lr':         f'{lr:.6f}'
                 })
-                wandb.log({'epoch': epoch, 'lr': lr, **train_metrics})
+                wandb.log({'epoch': epoch, 'lr': lr, **train_metrics}, step=self.global_step)
 
         self.epoch_pbar.close()
 
