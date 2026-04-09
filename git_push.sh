@@ -1,3 +1,3 @@
 git add .
-git commit -m "modded pipeline to have arg parsing"
+git commit -m "modded imports to have auto tqdm bar"
 git push
