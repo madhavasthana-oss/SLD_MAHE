@@ -75,16 +75,16 @@ class TRAINING_CONFIG:
     final_checkpoint: str = 'FINAL_MODEL.pth'
 
     DATASET: Dict = field(default_factory=lambda: {
-        'root_dir': '/root/.cache/kagglehub/datasets/grassknoted/asl-alphabet/versions/1/asl_alphabet_train/asl_alphabet_train',
+        'root_dir': '/kaggle/input/asl-alphabet/asl_alphabet_train/asl_alphabet_train',
         'splits':   [0.7, 0.2, 0.1],
         'train_config': {
-            'batch_size':  256,
+            'batch_size':  128,
             'num_workers': 2,
             'shuffle':     True,
             'drop_last':   False
         },
         'eval_config': {
-            'batch_size':  256,
+            'batch_size':  128,
             'num_workers': 2,
             'shuffle':     False,
             'drop_last':   False
@@ -191,7 +191,8 @@ class trainer:
             total=len(self.train_dl),
             desc='Training',
             leave=False,
-            position=1
+            position=1,
+            dynamic_ncols=True
         )
 
         for _, (inputs, targets) in batch_pbar:
@@ -257,7 +258,8 @@ class trainer:
             total=len(dl),
             desc=mode.capitalize(),
             leave=False,
-            position=1
+            position=1,
+            dynamic_ncols=True
         )
 
         with torch.no_grad():
@@ -335,7 +337,7 @@ class trainer:
         early_stopping_patience = self.config.MAIN['early_stopping_patience']
 
         print(f'\n<<<< Starting training for {num_epochs} epochs >>>>\n')
-        self.epoch_pbar = tqdm(range(num_epochs), desc='Epochs', position=0)
+        self.epoch_pbar = tqdm(range(num_epochs), desc='Epochs', position=0, dynamic_ncols=True)
 
         last_epoch = 0
         for epoch in self.epoch_pbar:
@@ -387,10 +389,10 @@ class trainer:
 
         print(f'\n<<<< Training complete >>>>')
         if self._best_model_saved:
-            print(f'<<<< Loading best checkpoint for final evaluation >>>>')
+            self.epoch_pbar.write('<<<< Loading best checkpoint for final evaluation >>>>')
             self.load_checkpoint(self.config.checkpoint)
         else:
-            print(f'<<<< Warning: no best checkpoint saved, evaluating final model >>>>')
+            self.epoch_pbar.write('<<<< Warning: no best checkpoint saved, evaluating final model >>>>')
 
         test_metrics = self.eval('test')
 
@@ -421,7 +423,7 @@ class _TransformSubset(Dataset):
     Wraps a Subset so it can carry its own transform,
     independent of the parent dataset's transform.
     """
-    def __init__(self, subset: Subset, transform):
+    def __init__(self, subset: Dataset, transform):
         self.subset    = subset
         self.transform = transform
 
