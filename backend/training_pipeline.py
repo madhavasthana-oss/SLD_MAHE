@@ -186,7 +186,16 @@ class trainer:
         grad_norm_sum = 0.0
         clip_count    = 0
         max_norm      = self.config.MAIN['max_grad_norm']
-        num_batches   = len(self.train_dl)
+        num_batches = len(self.train_dl)
+        batch_pbar  = tqdm(
+            total=num_batches,
+            desc='  train',
+            position=1,
+            leave=False,
+            ncols=100,
+            file=sys.stdout,
+            dynamic_ncols=False
+        )
 
         for batch_idx, (inputs, targets) in enumerate(self.train_dl):
             inputs  = inputs.to(self.config.device)
@@ -221,11 +230,13 @@ class trainer:
             wandb.log(batch_log, step=self.global_step)
             self.global_step += 1
 
-            self.epoch_pbar.set_postfix({
-                'batch':      f'{batch_idx + 1}/{num_batches}',
-                'batch_loss': f'{loss.item():.4f}',
-                'train_acc':  f'{100. * correct / total:.2f}%'
+            batch_pbar.set_postfix({
+                'loss': f'{loss.item():.4f}',
+                'acc':  f'{100. * correct / total:.2f}%'
             })
+            batch_pbar.update(1)
+
+        batch_pbar.close()
 
         train_metrics = {
             'train_loss': train_loss / num_batches,
@@ -254,6 +265,15 @@ class trainer:
             raise ValueError("mode must be 'validate' or 'test'")
 
         num_batches = len(dl)
+        batch_pbar  = tqdm(
+            total=num_batches,
+            desc=f'  {mode}',
+            position=1,
+            leave=False,
+            ncols=100,
+            file=sys.stdout,
+            dynamic_ncols=False
+        )
 
         with torch.no_grad():
             for batch_idx, (inputs, targets) in enumerate(dl):
@@ -267,12 +287,13 @@ class trainer:
                 predictions  = outputs.argmax(1)
                 val_correct += predictions.eq(targets).sum().item()
 
-                self.epoch_pbar.set_postfix({
-                    'phase':    mode,
-                    'batch':    f'{batch_idx + 1}/{num_batches}',
-                    'val_loss': f'{loss.item():.4f}',
-                    'val_acc':  f'{100. * val_correct / total:.2f}%'
+                batch_pbar.set_postfix({
+                    'loss': f'{loss.item():.4f}',
+                    'acc':  f'{100. * val_correct / total:.2f}%'
                 })
+                batch_pbar.update(1)
+
+        batch_pbar.close()
 
         prefix = 'val' if mode == 'validate' else 'test'
         return {
@@ -330,7 +351,7 @@ class trainer:
         early_stopping_patience = self.config.MAIN['early_stopping_patience']
 
         print(f'\n<<<< Starting training for {num_epochs} epochs >>>>\n')
-        self.epoch_pbar = tqdm(range(num_epochs), desc='Epochs', position=0, dynamic_ncols=True)
+        self.epoch_pbar = tqdm(range(num_epochs), desc='Epochs', position=0, leave=True, ncols=100, file=sys.stdout, dynamic_ncols=False)
 
         last_epoch = 0
         for epoch in self.epoch_pbar:
