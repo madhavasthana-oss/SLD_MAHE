@@ -1,3 +1,3 @@
 git add .
-git commit -m "modded imports to have auto tqdm bar"
+git commit -m "modded pipeling to remove pbar"
 git push

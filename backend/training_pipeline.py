@@ -187,15 +187,6 @@ class trainer:
         clip_count    = 0
         max_norm      = self.config.MAIN['max_grad_norm']
         num_batches = len(self.train_dl)
-        batch_pbar  = tqdm(
-            total=num_batches,
-            desc='  train',
-            position=1,
-            leave=False,
-            ncols=100,
-            file=sys.stdout,
-            dynamic_ncols=False
-        )
 
         for batch_idx, (inputs, targets) in enumerate(self.train_dl):
             inputs  = inputs.to(self.config.device)
@@ -230,14 +221,6 @@ class trainer:
             wandb.log(batch_log, step=self.global_step)
             self.global_step += 1
 
-            batch_pbar.set_postfix({
-                'loss': f'{loss.item():.4f}',
-                'acc':  f'{100. * correct / total:.2f}%'
-            })
-            batch_pbar.update(1)
-
-        batch_pbar.close()
-
         train_metrics = {
             'train_loss': train_loss / num_batches,
             'train_acc':  100. * correct / total
@@ -264,17 +247,6 @@ class trainer:
         else:
             raise ValueError("mode must be 'validate' or 'test'")
 
-        num_batches = len(dl)
-        batch_pbar  = tqdm(
-            total=num_batches,
-            desc=f'  {mode}',
-            position=1,
-            leave=False,
-            ncols=100,
-            file=sys.stdout,
-            dynamic_ncols=False
-        )
-
         with torch.no_grad():
             for batch_idx, (inputs, targets) in enumerate(dl):
                 inputs  = inputs.to(self.config.device)
@@ -286,14 +258,6 @@ class trainer:
                 total       += targets.size(0)
                 predictions  = outputs.argmax(1)
                 val_correct += predictions.eq(targets).sum().item()
-
-                batch_pbar.set_postfix({
-                    'loss': f'{loss.item():.4f}',
-                    'acc':  f'{100. * val_correct / total:.2f}%'
-                })
-                batch_pbar.update(1)
-
-        batch_pbar.close()
 
         prefix = 'val' if mode == 'validate' else 'test'
         return {
@@ -351,10 +315,9 @@ class trainer:
         early_stopping_patience = self.config.MAIN['early_stopping_patience']
 
         print(f'\n<<<< Starting training for {num_epochs} epochs >>>>\n')
-        self.epoch_pbar = tqdm(range(num_epochs), desc='Epochs', position=0, leave=True, ncols=100, file=sys.stdout, dynamic_ncols=False)
 
         last_epoch = 0
-        for epoch in self.epoch_pbar:
+        for epoch in range(num_epochs):
             last_epoch    = epoch
             train_metrics = self.train()
 
@@ -366,14 +329,14 @@ class trainer:
 
                 wandb.log({'epoch': epoch, 'lr': lr, **train_metrics, **val_metrics}, step=self.global_step)
 
-                self.epoch_pbar.set_postfix({
-                    'epoch':      f'{epoch + 1}',
-                    'train_loss': f'{train_metrics["train_loss"]:.4f}',
-                    'train_acc':  f'{train_metrics["train_acc"]:.2f}%',
-                    'val_loss':   f'{val_metrics["val_loss"]:.4f}',
-                    'val_acc':    f'{val_metrics["val_acc"]:.2f}%',
-                    'lr':         f'{lr:.6f}'
-                })
+                print(
+                    f'  epoch {epoch + 1}/{num_epochs} | '
+                    f'train_loss: {train_metrics["train_loss"]:.4f} | '
+                    f'train_acc: {train_metrics["train_acc"]:.2f}% | '
+                    f'val_loss: {val_metrics["val_loss"]:.4f} | '
+                    f'val_acc: {val_metrics["val_acc"]:.2f}% | '
+                    f'lr: {lr:.6f}'
+                )
 
                 if current_acc > self.best_accuracy:
                     self.best_accuracy    = current_acc
@@ -383,7 +346,7 @@ class trainer:
                     self.patience_counter += 1
 
                 if self.patience_counter >= early_stopping_patience:
-                    self.epoch_pbar.write(
+                    print(
                         f'\n<<<< Early stopping at epoch {epoch + 1} | '
                         f'best val_acc: {self.best_accuracy:.2f}% >>>>'
                     )
@@ -391,23 +354,22 @@ class trainer:
             else:
                 self.scheduler.step()
                 lr = self.optimizer.param_groups[0]['lr']
-                self.epoch_pbar.set_postfix({
-                    'train_loss': f'{train_metrics["train_loss"]:.4f}',
-                    'train_acc':  f'{train_metrics["train_acc"]:.2f}%',
-                    'lr':         f'{lr:.6f}'
-                })
+                print(
+                    f'  epoch {epoch + 1}/{num_epochs} | '
+                    f'train_loss: {train_metrics["train_loss"]:.4f} | '
+                    f'train_acc: {train_metrics["train_acc"]:.2f}% | '
+                    f'lr: {lr:.6f}'
+                )
                 wandb.log({'epoch': epoch, 'lr': lr, **train_metrics}, step=self.global_step)
-
-        self.epoch_pbar.close()
 
         self.save_checkpoint(last_epoch, is_best=False)
 
         print(f'\n<<<< Training complete >>>>')
         if self._best_model_saved:
-            self.epoch_pbar.write('<<<< Loading best checkpoint for final evaluation >>>>')
+            print('<<<< Loading best checkpoint for final evaluation >>>>')
             self.load_checkpoint(self.config.checkpoint)
         else:
-            self.epoch_pbar.write('<<<< Warning: no best checkpoint saved, evaluating final model >>>>')
+            print('<<<< Warning: no best checkpoint saved, evaluating final model >>>>')
 
         test_metrics = self.eval('test')
 
