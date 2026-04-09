@@ -442,13 +442,28 @@ class _TransformSubset(Dataset):
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
-    config  = TRAINING_CONFIG()
-    dataset = ASLDataset(
-        root_dir=config.DATASET['root_dir'],
-        transform=None   # raw PIL — transforms applied per-split in trainer
-    )
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--root_dir',   type=str, required=True)
+    parser.add_argument('--save_to',    type=str, required=True)
+    parser.add_argument('--epochs',     type=int, default=3)
+    parser.add_argument('--batch_size', type=int, default=128)
+    args = parser.parse_args()
+
+    config = TRAINING_CONFIG()
+    config.DATASET['root_dir']                        = args.root_dir
+    config.MAIN['num_epochs']                         = args.epochs
+    config.MAIN['scheduler_config']['T_max']          = args.epochs
+    config.DATASET['train_config']['batch_size']      = args.batch_size
+    config.DATASET['eval_config']['batch_size']       = args.batch_size
+    config.checkpoint                                 = os.path.join(args.save_to, 'BEST_MODEL.pth')
+    config.final_checkpoint                           = os.path.join(args.save_to, 'FINAL_MODEL.pth')
+
+    os.makedirs(args.save_to, exist_ok=True)
+
+    dataset = ASLDataset(root_dir=config.DATASET['root_dir'], transform=None)
     model   = SLD(num_classes=len(dataset.classes))
 
     trainer_instance = trainer(config, dataset, model)
