@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 from dataclasses import dataclass, field
@@ -63,7 +64,7 @@ class HandDetector:
 
     def __init__(
         self,
-        model_path: str = "yolov8n.pt",
+        model_path: str = "hand_yolov8n.pt",
         confidence: float = 0.50,
         iou_threshold: float = 0.45,
         device: str = "",
@@ -71,12 +72,54 @@ class HandDetector:
         roi_padding: int = 10,
     ):
         logger.info("Loading YOLO model: %s", model_path)
+
+        # Auto-download hand-specific weights if the file doesn't exist locally
+        if not os.path.exists(model_path) and model_path == "hand_yolov8n.pt":
+            import urllib.request
+
+            _HAND_MODEL_URLS = [
+                # Ultralytics-compatible hand detection model (Google Drive direct)
+                "https://drive.usercontent.google.com/download?id=1bRGBFAzTFtfhBMnCOnIWFvSFv6sgXbhV&export=download&confirm=t",
+                # Mirror: same weights hosted on HuggingFace
+                "https://huggingface.co/Bingsu/adetailer/resolve/main/hand_yolov8n.pt",
+            ]
+
+            downloaded = False
+            for url in _HAND_MODEL_URLS:
+                try:
+                    logger.info("Downloading hand_yolov8n.pt from: %s", url)
+                    urllib.request.urlretrieve(url, model_path)
+                    logger.info("Download complete → %s", model_path)
+                    downloaded = True
+                    break
+                except Exception as e:
+                    logger.warning("Failed (%s), trying next URL…", e)
+
+            if not downloaded:
+                raise RuntimeError(
+                    "Could not download hand_yolov8n.pt automatically.\n"
+                    "Please download it manually from:\n"
+                    "  https://huggingface.co/Bingsu/adetailer/resolve/main/hand_yolov8n.pt\n"
+                    "and place it in your working directory."
+                )
+
         self.model = YOLO(model_path)
+
+        # Inspect the model's class names and find all hand-related labels
+        _model_classes = set(self.model.names.values())
+        _HAND_LABELS   = {"hand", "Hand", "HAND", "person"}   # person excluded below
+        _detected_hand_labels = {c for c in _model_classes if "hand" in c.lower()}
+
+        # If caller didn't specify target_classes, default to all hand labels
+        # the model knows about, or fall back to whatever it outputs (hand-only model)
+        if target_classes is None:
+            self.target_classes = _detected_hand_labels if _detected_hand_labels else None
+        else:
+            self.target_classes = set(target_classes)
 
         self.confidence    = confidence
         self.iou_threshold = iou_threshold
         self.device        = device
-        self.target_classes = set(target_classes) if target_classes else None
         self.roi_padding   = roi_padding
 
         # FPS tracking
@@ -87,7 +130,7 @@ class HandDetector:
             "HandDetector ready | conf=%.2f  iou=%.2f  device=%s  classes=%s",
             confidence, iou_threshold,
             device or "auto",
-            list(target_classes) if target_classes else "all",
+            list(self.target_classes) if self.target_classes else "all",
         )
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -234,7 +277,7 @@ class HandDetector:
 
 # ── Stand-alone real-time demo ─────────────────────────────────────────────────
 def run_webcam(
-    model_path: str = "yolov8n.pt",
+    model_path: str = "hand_yolov8n.pt",
     camera_index: int = 0,
     confidence: float = 0.50,
     target_classes: Optional[list[str]] = None,
@@ -305,7 +348,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Real-time YOLO hand detector for sign language."
     )
-    parser.add_argument("--model",      default="yolov8n.pt",
+    parser.add_argument("--model",      default="hand_yolov8n.pt",
                         help="Path to YOLO .pt weights")
     parser.add_argument("--camera",     type=int, default=0,
                         help="Camera device index (default: 0)")

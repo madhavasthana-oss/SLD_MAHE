@@ -34,15 +34,15 @@ app.add_middleware(
 print("<<<< Loading models... >>>>")
 
 detector = HandDetector(
-    model_path="yolov8n.pt",
+    model_path="hand_yolov8n.pt",
     target_classes=["hand"]
 )
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-model = SLD(num_classes=26)
+model = SLD(num_classes=29)
 model.load_state_dict(
-    torch.load("BEST_MODEL.pth", map_location=device)['model_state_dict']
+    torch.load("BEST_MODEL.pth", map_location=device, weights_only=False)['model_state_dict']
 )
 model.to(device)
 model.eval()
@@ -69,6 +69,11 @@ def preprocess(img: np.ndarray) -> torch.Tensor:
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)   # YOLO gives BGR
     tensor  = _preprocess(img_rgb).unsqueeze(0)       # (1, 3, 224, 224)
     return tensor.to(device)
+
+# Class index → label
+# ASL alphabet dataset folder names sorted alphabetically:
+# A–Z (indices 0–25), then del (26), nothing (27), space (28)
+_CLASSES = [chr(ord('A') + i) for i in range(26)] + ['del', 'nothing', 'space']
 
 # ─────────────────────────────────────────────
 # HEALTH CHECK
@@ -112,8 +117,8 @@ async def predict(file: UploadFile = File(...)):
             probs  = torch.softmax(output, dim=1)
             conf, pred = torch.max(probs, dim=1)
 
-        # Map index → letter (A–Z)
-        label = chr(ord('A') + pred.item())
+        # Map index → label
+        label = _CLASSES[pred.item()]
 
         return {
             "letter":     label,
