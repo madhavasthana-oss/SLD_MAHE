@@ -274,7 +274,6 @@ class trainer:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'best_accuracy':        self.best_accuracy,
-            'config':               self.config
         }
         if is_best:
             torch.save(checkpoint, self.config.checkpoint)
@@ -283,7 +282,7 @@ class trainer:
         torch.save(checkpoint, self.config.final_checkpoint)
 
     def load_checkpoint(self, checkpoint_path: str):
-        checkpoint = torch.load(checkpoint_path, map_location=self.config.device)
+        checkpoint = torch.load(checkpoint_path, map_location=self.config.device, weights_only=False)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
