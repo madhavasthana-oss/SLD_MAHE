@@ -279,9 +279,7 @@ class trainer:
         if is_best:
             torch.save(checkpoint, self.config.checkpoint)
             self._best_model_saved = True
-            self.epoch_pbar.write(
-                f'<<<< New best model saved — val_acc: {self.best_accuracy:.2f}% >>>>'
-            )
+            print(f'<<<< New best model saved — val_acc: {self.best_accuracy:.2f}% >>>>')
         torch.save(checkpoint, self.config.final_checkpoint)
 
     def load_checkpoint(self, checkpoint_path: str):
@@ -299,12 +297,17 @@ class trainer:
         Full training loop:
           train → validate → early stopping → test on best checkpoint
         """
+        wandb_main_config = {
+            k: v for k, v in self.config.MAIN.items()
+            if k not in ('loss_fn', 'optimizer_class', 'scheduler_class')
+        }
+
         wandb.init(
             **self.config.WANDB,
             config={
                 'seed': self.config.seed,
                 'run':  self.config.run,
-                **self.config.MAIN,
+                **wandb_main_config,
                 'train_config': self.config.DATASET['train_config'],
                 'eval_config':  self.config.DATASET['eval_config']
             }
