@@ -1,727 +1,1159 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ASL · Live Detector</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ASL NEURAL INTERFACE</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600;700&display=swap');
 
-    :root {
-      --bg:        #080b10;
-      --bg2:       #0d1117;
-      --bg3:       #111820;
-      --border:    #1e2d3d;
-      --accent:    #00e5ff;
-      --accent2:   #7b2fff;
-      --green:     #00ff88;
-      --dim:       #3a5068;
-      --text:      #c9d8e8;
-      --text-dim:  #4a6580;
-      --mono:      'Share Tech Mono', monospace;
-      --sans:      'Syne', sans-serif;
-      --glow:      0 0 18px rgba(0,229,255,0.35);
-      --glow2:     0 0 18px rgba(123,47,255,0.35);
-    }
+  :root {
+    --cyan:   #00f5ff;
+    --teal:   #00c9a7;
+    --blue:   #0a84ff;
+    --amber:  #ffb800;
+    --red:    #ff3b5c;
+    --green:  #39ff7e;
+    --bg:     #040810;
+    --panel:  rgba(0,245,255,0.03);
+    --border: rgba(0,245,255,0.15);
+  }
 
-    html, body {
-      height: 100%;
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--mono);
-      overflow: hidden;
-    }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* scanline overlay */
-    body::before {
-      content: '';
-      position: fixed; inset: 0;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0,0,0,0.08) 2px,
-        rgba(0,0,0,0.08) 4px
-      );
-      pointer-events: none;
-      z-index: 1000;
-    }
+  body {
+    background: var(--bg);
+    color: var(--cyan);
+    font-family: 'Rajdhani', sans-serif;
+    min-height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
 
-    /* corner bracket decoration */
-    .bracket::before, .bracket::after {
-      content: '';
-      position: absolute;
-      width: 12px; height: 12px;
-      border-color: var(--accent);
-      border-style: solid;
-      opacity: 0.6;
-    }
-    .bracket::before { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
-    .bracket::after  { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,245,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,245,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
 
-    /* ── LAYOUT ── */
-    #app {
-      display: grid;
-      grid-template-rows: 48px 1fr;
-      grid-template-columns: 1fr 300px;
-      grid-template-areas:
-        "header header"
-        "feed   sidebar";
-      height: 100vh;
-      gap: 0;
-    }
+  /* Radial vignette */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(4,8,16,0.85) 100%);
+    pointer-events: none;
+    z-index: 0;
+  }
 
-    /* ── HEADER ── */
-    header {
-      grid-area: header;
-      display: flex;
-      align-items: center;
-      gap: 24px;
-      padding: 0 20px;
-      border-bottom: 1px solid var(--border);
-      background: var(--bg2);
-      position: relative;
-      z-index: 10;
-    }
+  /* ── Layout ── */
+  .shell {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 18% 1fr 18%;
+    grid-template-rows: auto 1fr auto;
+    gap: 16px;
+    width: 98vw;
+    max-width: 1600px; /* optional */
+    height: 96vh;
+    padding: 16px;
+  }
 
-    .logo {
-      font-family: var(--sans);
-      font-weight: 800;
-      font-size: 15px;
-      letter-spacing: 0.12em;
-      color: var(--accent);
-      text-transform: uppercase;
-    }
-    .logo span { color: var(--text-dim); font-weight: 400; }
+  /* ── Header ── */
+  .header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 12px;
+  }
+  .logo {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    color: rgba(0,245,255,0.5);
+    letter-spacing: 4px;
+  }
+  .title {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    color: var(--cyan);
+    text-shadow: 0 0 20px rgba(0,245,255,0.6);
+  }
+  .status-bar {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: rgba(0,245,255,0.4);
+    text-align: right;
+    line-height: 1.8;
+  }
+  .status-bar span { color: var(--teal); }
 
-    .status-pill {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 10px;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--text-dim);
-      padding: 3px 10px;
-      border: 1px solid var(--border);
-      border-radius: 2px;
-    }
-    .dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: var(--dim);
-      transition: background 0.3s, box-shadow 0.3s;
-    }
-    .dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); }
-    .dot.error { background: #ff4455; box-shadow: 0 0 8px #ff4455; }
+  /* ── Left panel ── */
+  .panel-left {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
 
-    .header-right {
-      margin-left: auto;
-      display: flex; align-items: center; gap: 16px;
-      font-size: 10px;
-      color: var(--text-dim);
-      letter-spacing: 0.08em;
-    }
-    #fps-counter { color: var(--accent); min-width: 56px; }
-    #conf-counter { color: var(--accent2); min-width: 50px; }
+  .panel-block {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 14px;
+    position: relative;
+  }
+  .panel-block::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+    background: var(--cyan);
+    opacity: 0.4;
+  }
+  .block-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: rgba(0,245,255,0.4);
+    margin-bottom: 10px;
+  }
 
-    /* ── FEED ── */
-    #feed-area {
-      grid-area: feed;
-      position: relative;
-      overflow: hidden;
-      background: #000;
-    }
+  /* Signal indicator */
+  .signal-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .signal-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    flex-shrink: 0;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .signal-dot.active { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .signal-dot.processing { background: var(--amber); box-shadow: 0 0 8px var(--amber); animation: pulse-dot 0.6s ease-in-out infinite alternate; }
+  @keyframes pulse-dot { from { opacity: 0.4; } to { opacity: 1; } }
 
-    canvas {
-      display: block;
-      width: 100%; height: 100%;
-      object-fit: cover;
-    }
-    video { display: none; }
+  .signal-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: rgba(0,245,255,0.7);
+  }
 
-    /* big predicted letter overlay */
-    #big-letter {
-      position: absolute;
-      bottom: 24px; left: 32px;
-      font-family: var(--sans);
-      font-weight: 800;
-      font-size: 96px;
-      line-height: 1;
-      color: transparent;
-      -webkit-text-stroke: 2px var(--accent);
-      text-shadow: var(--glow);
-      letter-spacing: -0.02em;
-      opacity: 0;
-      transform: translateY(10px);
-      transition: opacity 0.12s, transform 0.12s;
-      pointer-events: none;
-      z-index: 20;
-    }
-    #big-letter.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
+  /* Confidence meter */
+  .meter-wrap {
+    margin-top: 4px;
+  }
+  .meter-row {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: rgba(0,245,255,0.5);
+    margin-bottom: 4px;
+  }
+  .meter-track {
+    height: 4px;
+    background: rgba(0,245,255,0.08);
+    position: relative;
+    overflow: hidden;
+  }
+  .meter-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--cyan);
+    box-shadow: 0 0 6px var(--cyan);
+    transition: width 0.2s ease, background 0.2s;
+  }
+  .meter-fill.low { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .meter-fill.mid { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .meter-fill.high { background: var(--green); box-shadow: 0 0 6px var(--green); }
 
-    /* corner scan brackets on feed */
-    #feed-area .bracket::before { width: 20px; height: 20px; top: 12px; left: 12px; }
-    #feed-area .bracket::after  { width: 20px; height: 20px; bottom: 12px; right: 12px; }
+  /* Dwell arc progress */
+  .dwell-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .dwell-svg { width: 52px; height: 52px; }
+  .dwell-track { fill: none; stroke: rgba(0,245,255,0.1); stroke-width: 4; }
+  .dwell-arc {
+    fill: none;
+    stroke: var(--cyan);
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-dasharray: 138.23; /* 2π × 22 */
+    stroke-dashoffset: 138.23;
+    transform-origin: center;
+    transform: rotate(-90deg);
+    filter: drop-shadow(0 0 4px var(--cyan));
+    transition: stroke-dashoffset 0.1s linear, stroke 0.2s;
+  }
+  .dwell-arc.repeat { stroke: var(--amber); filter: drop-shadow(0 0 4px var(--amber)); }
+  .dwell-center {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    fill: var(--cyan);
+  }
+  .dwell-info { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: rgba(0,245,255,0.5); line-height: 1.7; }
 
-    /* start button */
-    #start-btn {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      font-family: var(--mono);
-      font-size: 11px;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: var(--accent);
-      background: transparent;
-      border: 1px solid var(--accent);
-      padding: 12px 28px;
-      cursor: pointer;
-      transition: background 0.2s, box-shadow 0.2s;
-      z-index: 30;
-    }
-    #start-btn:hover { background: rgba(0,229,255,0.08); box-shadow: var(--glow); }
-    #start-btn.hidden { display: none; }
+  /* Output log */
+  .output-sentence {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--cyan);
+    text-shadow: 0 0 16px rgba(0,245,255,0.5);
+    min-height: 40px;
+    word-break: break-all;
+    line-height: 1.3;
+  }
+  .output-sentence .new-char {
+    animation: char-pop 0.3s ease-out forwards;
+  }
+  @keyframes char-pop {
+    0%   { color: #fff; text-shadow: 0 0 30px #fff; }
+    100% { color: var(--cyan); text-shadow: 0 0 16px rgba(0,245,255,0.5); }
+  }
 
-    /* ── SIDEBAR ── */
-    #sidebar {
-      grid-area: sidebar;
-      display: flex;
-      flex-direction: column;
-      border-left: 1px solid var(--border);
-      background: var(--bg2);
-      overflow: hidden;
-    }
+  .output-controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .btn {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: rgba(0,245,255,0.6);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn:hover { background: rgba(0,245,255,0.08); color: var(--cyan); border-color: var(--cyan); }
+  .btn.danger:hover { border-color: var(--red); color: var(--red); background: rgba(255,59,92,0.08); }
 
-    .panel-label {
-      font-size: 9px;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      color: var(--text-dim);
-      padding: 12px 16px 8px;
-      border-bottom: 1px solid var(--border);
-    }
+  /* Letter history */
+  .letter-history {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+    max-height: 80px;
+    overflow: hidden;
+  }
+  .hist-chip {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    color: rgba(0,245,255,0.5);
+  }
+  .hist-chip.recent { border-color: var(--teal); color: var(--teal); }
 
-    /* ── STATS PANEL ── */
-    #stats-panel {
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
+  /* ── Center — Camera ── */
+  .camera-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9; /* 🔥 key line */
+    border: 1px solid var(--border);
+    background: #000;
+    overflow: hidden;
+  }
 
-    .stat-box {
-      background: var(--bg3);
-      border: 1px solid var(--border);
-      padding: 10px 12px;
-      position: relative;
-    }
-    .stat-box.bracket { }
-    .stat-label {
-      font-size: 8px;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--text-dim);
-      margin-bottom: 4px;
-    }
-    .stat-val {
-      font-family: var(--sans);
-      font-weight: 700;
-      font-size: 22px;
-      color: var(--accent);
-      line-height: 1;
-    }
-    .stat-val.purple { color: var(--accent2); }
-    .stat-val.green  { color: var(--green); }
+  #video {
+    transform: scaleX(-1);
+  }
 
-    /* ── CURRENT PREDICTION ── */
-    #pred-panel {
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
-    }
-    #pred-letter-large {
-      font-family: var(--sans);
-      font-weight: 800;
-      font-size: 56px;
-      line-height: 1;
-      color: var(--accent);
-      text-shadow: var(--glow);
-      letter-spacing: -0.02em;
-      min-height: 56px;
-    }
-    #pred-class {
-      font-size: 10px;
-      color: var(--text-dim);
-      letter-spacing: 0.1em;
-      margin-top: 4px;
-    }
-    #conf-bar-wrap {
-      margin-top: 10px;
-      height: 3px;
-      background: var(--border);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-    #conf-bar {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, var(--accent2), var(--accent));
-      border-radius: 2px;
-      transition: width 0.15s;
-    }
+  #video, #canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
 
-    /* ── TRANSCRIPT ── */
-    #transcript-wrap {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    #transcript {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px 16px;
-      font-size: 11px;
-      line-height: 1.8;
-      color: var(--text-dim);
-      word-break: break-all;
-    }
-    #transcript::-webkit-scrollbar { width: 3px; }
-    #transcript::-webkit-scrollbar-thumb { background: var(--border); }
+  #canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: scaleX(-1);
+    pointer-events: none;
+  }
 
-    .t-letter {
-      display: inline-block;
-      color: var(--text);
-      opacity: 0;
-      animation: fadeUp 0.15s forwards;
-    }
-    .t-letter.accent { color: var(--accent); }
+  /* Scan line */
+  .scan-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity: 0.3;
+    animation: scan 3s linear infinite;
+    pointer-events: none;
+    z-index: 3;
+  }
+  @keyframes scan { 0% { top: 0%; } 100% { top: 100%; } }
 
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
+  /* Corner decorators */
+  .corner { position: absolute; width: 20px; height: 20px; z-index: 3; }
+  .corner.tl { top: 8px; left: 8px; border-top: 2px solid var(--cyan); border-left: 2px solid var(--cyan); }
+  .corner.tr { top: 8px; right: 8px; border-top: 2px solid var(--cyan); border-right: 2px solid var(--cyan); }
+  .corner.bl { bottom: 8px; left: 8px; border-bottom: 2px solid var(--cyan); border-left: 2px solid var(--cyan); }
+  .corner.br { bottom: 8px; right: 8px; border-bottom: 2px solid var(--cyan); border-right: 2px solid var(--cyan); }
 
-    /* ── TRANSCRIPT CONTROLS ── */
-    #transcript-controls {
-      display: flex;
-      gap: 8px;
-      padding: 10px 16px;
-      border-top: 1px solid var(--border);
-    }
+  /* HUD overlay — the floating status tag near hand */
+  #hud-tag {
+    position: absolute;
+    pointer-events: none;
+    z-index: 10;
+    transition: left 0.1s ease, top 0.1s ease;
+    display: none;
+  }
+  .hud-inner {
+    background: rgba(4,8,16,0.85);
+    border: 1px solid var(--cyan);
+    padding: 6px 10px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--cyan);
+    white-space: nowrap;
+    position: relative;
+  }
+  .hud-inner::before {
+    content: '';
+    position: absolute;
+    bottom: -6px; left: 12px;
+    width: 10px; height: 10px;
+    border-right: 1px solid var(--cyan);
+    border-bottom: 1px solid var(--cyan);
+    background: rgba(4,8,16,0.85);
+    transform: rotate(45deg);
+  }
+  .hud-letter {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 0 20px var(--cyan);
+    margin-right: 6px;
+  }
+  .hud-state {
+    font-size: 10px;
+    letter-spacing: 2px;
+  }
+  .hud-state.detecting { color: var(--amber); }
+  .hud-state.confirmed { color: var(--green); }
+  .hud-state.hold      { color: var(--cyan); }
+  .hud-state.moving    { color: var(--red); }
 
-    .ctrl-btn {
-      flex: 1;
-      font-family: var(--mono);
-      font-size: 9px;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--text-dim);
-      background: transparent;
-      border: 1px solid var(--border);
-      padding: 7px 4px;
-      cursor: pointer;
-      transition: color 0.15s, border-color 0.15s;
-    }
-    .ctrl-btn:hover { color: var(--accent); border-color: var(--accent); }
+  /* Flash overlay on letter confirm */
+  #flash {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 8;
+    opacity: 0;
+    background: radial-gradient(ellipse at center, rgba(0,245,255,0.18) 0%, transparent 70%);
+  }
+  #flash.pop { animation: flash-pop 0.4s ease-out forwards; }
+  @keyframes flash-pop { 0% { opacity: 1; } 100% { opacity: 0; } }
 
-    /* ── API CONFIG ── */
-    #api-bar {
-      padding: 10px 16px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    #api-url {
-      flex: 1;
-      font-family: var(--mono);
-      font-size: 9px;
-      background: var(--bg3);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 6px 8px;
-      outline: none;
-      letter-spacing: 0.04em;
-    }
-    #api-url:focus { border-color: var(--accent); }
-    #api-label {
-      font-size: 8px;
-      color: var(--text-dim);
-      letter-spacing: 0.1em;
-      white-space: nowrap;
-    }
+  /* ── Right panel ── */
+  .panel-right {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
 
-    /* interval control */
-    #interval-bar {
-      padding: 8px 16px 10px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    #interval-label { font-size: 9px; color: var(--text-dim); letter-spacing: 0.1em; white-space: nowrap; }
-    #interval-val   { font-size: 9px; color: var(--accent); min-width: 32px; text-align: right; }
-    input[type=range] {
-      flex: 1;
-      -webkit-appearance: none;
-      height: 2px;
-      background: var(--border);
-      outline: none;
-      border-radius: 2px;
-    }
-    input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      background: var(--accent);
-      cursor: pointer;
-      box-shadow: var(--glow);
-    }
+  /* Alphabet grid */
+  .alpha-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 3px;
+  }
+  .alpha-cell {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    border: 1px solid rgba(0,245,255,0.08);
+    color: rgba(0,245,255,0.2);
+    transition: all 0.15s;
+  }
+  .alpha-cell.active {
+    border-color: var(--cyan);
+    color: var(--cyan);
+    background: rgba(0,245,255,0.08);
+    box-shadow: 0 0 8px rgba(0,245,255,0.3), inset 0 0 6px rgba(0,245,255,0.05);
+    text-shadow: 0 0 8px var(--cyan);
+  }
+  .alpha-cell.recent {
+    border-color: rgba(0,201,167,0.4);
+    color: var(--teal);
+  }
 
-    /* error toast */
-    #toast {
-      position: fixed;
-      bottom: 20px; left: 50%;
-      transform: translateX(-50%) translateY(60px);
-      font-size: 10px;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: #ff4455;
-      background: var(--bg2);
-      border: 1px solid #ff4455;
-      padding: 8px 18px;
-      z-index: 999;
-      transition: transform 0.2s;
-      pointer-events: none;
-    }
-    #toast.show { transform: translateX(-50%) translateY(0); }
-  </style>
+  /* Event log */
+  .event-log {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .event-entry {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: rgba(0,245,255,0.35);
+    border-left: 2px solid rgba(0,245,255,0.1);
+    padding-left: 6px;
+    line-height: 1.6;
+    transition: opacity 0.5s;
+  }
+  .event-entry.fresh { color: rgba(0,245,255,0.8); border-color: var(--cyan); }
+  .event-entry.letter-emit { color: var(--green); border-color: var(--green); }
+  .event-entry.warn { color: var(--amber); border-color: var(--amber); }
+
+  /* ── Footer ── */
+  .footer {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+  .footer-info {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: rgba(0,245,255,0.3);
+    letter-spacing: 2px;
+  }
+  .footer-controls { display: flex; gap: 8px; }
+  .toggle-btn {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 5px 14px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: rgba(0,245,255,0.5);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .toggle-btn.armed {
+    border-color: var(--green);
+    color: var(--green);
+    background: rgba(57,255,126,0.06);
+    box-shadow: 0 0 10px rgba(57,255,126,0.15);
+  }
+  .toggle-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  /* No-hand idle state */
+  .idle-msg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 4;
+    pointer-events: none;
+  }
+  .idle-icon {
+    font-size: 48px;
+    opacity: 0.08;
+    margin-bottom: 8px;
+  }
+  .idle-text {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: rgba(0,245,255,0.15);
+  }
+
+</style>
 </head>
 <body>
 
-<div id="app">
+<div class="shell">
 
-  <!-- HEADER -->
-  <header>
-    <div class="logo">ASL<span> · </span>Detector</div>
-    <div class="status-pill"><div class="dot" id="status-dot"></div><span id="status-text">standby</span></div>
-    <div class="header-right">
-      <span>FPS <span id="fps-counter">—</span></span>
-      <span>CONF <span id="conf-counter">—</span></span>
-      <span id="model-tag">YOLO + RESNET-50</span>
+  <!-- Header -->
+  <header class="header">
+    <div class="logo">SYS // ASL-NEURAL v1.0</div>
+    <div class="title">SIGN DETECT</div>
+    <div class="status-bar" id="status-bar">
+      MODEL <span>RESNET-50</span><br>
+      BACKEND <span id="backend-status">OFFLINE</span><br>
+      FPS <span id="fps-counter">0</span>
     </div>
   </header>
 
-  <!-- FEED -->
-  <div id="feed-area" class="bracket">
-    <video id="video" autoplay playsinline muted></video>
+  <!-- Left Panel -->
+  <aside class="panel-left">
+
+    <div class="panel-block">
+      <div class="block-label">// SIGNAL STATUS</div>
+      <div class="signal-row">
+        <div class="signal-dot" id="dot-hand"></div>
+        <span class="signal-label" id="label-hand">NO HAND</span>
+      </div>
+      <div class="signal-row">
+        <div class="signal-dot" id="dot-stable"></div>
+        <span class="signal-label" id="label-stable">—</span>
+      </div>
+      <div class="signal-row">
+        <div class="signal-dot" id="dot-clf"></div>
+        <span class="signal-label" id="label-clf">CLASSIFIER IDLE</span>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="block-label">// CONFIDENCE</div>
+      <div class="meter-wrap">
+        <div class="meter-row"><span>CLF SCORE</span><span id="conf-val">0.00</span></div>
+        <div class="meter-track"><div class="meter-fill" id="conf-bar"></div></div>
+      </div>
+      <div style="margin-top: 10px;">
+        <div class="meter-row"><span>VOTE BUFFER</span><span id="buf-val">0/10</span></div>
+        <div class="meter-track"><div class="meter-fill high" id="buf-bar"></div></div>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="block-label">// DWELL TIMER</div>
+      <div class="dwell-wrap">
+        <svg class="dwell-svg" viewBox="0 0 52 52">
+          <circle class="dwell-track" cx="26" cy="26" r="22"/>
+          <circle class="dwell-arc" id="dwell-arc" cx="26" cy="26" r="22"/>
+          <text class="dwell-center" x="26" y="30" text-anchor="middle" id="dwell-pct">0%</text>
+        </svg>
+        <div class="dwell-info" id="dwell-info">
+          HOLD STILL<br>TO REGISTER<br>LETTER
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-block" style="flex:1;">
+      <div class="block-label">// OUTPUT</div>
+      <div class="output-sentence" id="output-sentence">&nbsp;</div>
+      <div class="output-controls">
+        <button class="btn" onclick="addSpace()">SPACE</button>
+        <button class="btn danger" onclick="backspace()">DEL</button>
+        <button class="btn danger" onclick="clearOutput()">CLR</button>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- Camera Center -->
+  <div class="camera-wrap">
+    <video id="video" autoplay muted playsinline></video>
     <canvas id="canvas"></canvas>
-    <div id="big-letter"></div>
-    <button id="start-btn">▶ init camera</button>
-  </div>
-
-  <!-- SIDEBAR -->
-  <div id="sidebar">
-    <div class="panel-label">// prediction</div>
-
-    <!-- stats row -->
-    <div id="stats-panel">
-      <div class="stat-box bracket">
-        <div class="stat-label">Total</div>
-        <div class="stat-val" id="stat-total">0</div>
-      </div>
-      <div class="stat-box bracket">
-        <div class="stat-label">Last conf</div>
-        <div class="stat-val purple" id="stat-conf">—</div>
-      </div>
-      <div class="stat-box bracket" style="grid-column:span 2">
-        <div class="stat-label">Current letter</div>
-        <div id="pred-letter-large">—</div>
-        <div id="pred-class">awaiting signal...</div>
-        <div id="conf-bar-wrap"><div id="conf-bar"></div></div>
+    <div class="scan-line"></div>
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+    <div id="hud-tag">
+      <div class="hud-inner">
+        <span class="hud-letter" id="hud-letter">A</span>
+        <span class="hud-state" id="hud-state">DETECTING</span>
       </div>
     </div>
-
-    <!-- transcript -->
-    <div id="transcript-wrap">
-      <div class="panel-label">// transcript</div>
-      <div id="transcript"><span style="color:var(--text-dim);font-size:10px">_</span></div>
-      <div id="transcript-controls">
-        <button class="ctrl-btn" onclick="addSpace()">space</button>
-        <button class="ctrl-btn" onclick="deleteLast()">delete</button>
-        <button class="ctrl-btn" onclick="clearTranscript()">clear</button>
-        <button class="ctrl-btn" onclick="copyTranscript()">copy</button>
-      </div>
-    </div>
-
-    <!-- api url -->
-    <div id="api-bar">
-      <span id="api-label">API</span>
-      <input id="api-url" type="text" value="http://localhost:8000/predict" spellcheck="false"/>
-    </div>
-
-    <!-- interval slider -->
-    <div id="interval-bar">
-      <span id="interval-label">interval</span>
-      <input type="range" id="interval-slider" min="100" max="2000" step="100" value="300"
-             oninput="updateInterval(this.value)">
-      <span id="interval-val">300ms</span>
+    <div id="flash"></div>
+    <div class="idle-msg" id="idle-msg">
+      <div class="idle-icon">✋</div>
+      <div class="idle-text">AWAITING HAND SIGNAL</div>
     </div>
   </div>
+
+  <!-- Right Panel -->
+  <aside class="panel-right">
+
+    <div class="panel-block">
+      <div class="block-label">// ALPHABET MATRIX</div>
+      <div class="alpha-grid" id="alpha-grid"></div>
+    </div>
+
+    <div class="panel-block" style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
+      <div class="block-label">// EVENT STREAM</div>
+      <div class="event-log" id="event-log"></div>
+    </div>
+
+    <div class="panel-block">
+      <div class="block-label">// RECENT</div>
+      <div class="letter-history" id="letter-history"></div>
+    </div>
+
+  </aside>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-info" id="footer-info">SYSTEM IDLE — PRESS START TO ARM</div>
+    <div class="footer-controls">
+      <button class="toggle-btn" id="start-btn" onclick="startCamera()">▶ START</button>
+      <button class="toggle-btn armed" id="arm-btn" onclick="toggleArmed()" disabled>◉ ARMED</button>
+      <button class="toggle-btn" id="stop-btn" onclick="stopCamera()" disabled>■ STOP</button>
+    </div>
+  </footer>
 
 </div>
 
-<div id="toast"></div>
-
 <script>
-  const video    = document.getElementById('video');
-  const canvas   = document.getElementById('canvas');
-  const ctx      = canvas.getContext('2d');
-  const startBtn = document.getElementById('start-btn');
-  const bigLetter= document.getElementById('big-letter');
+const BACKEND = 'http://localhost:8000';
+const CAPTURE_INTERVAL_MS = 120;   // ~8fps capture rate sent to backend
+const DWELL_FIRST_MS      = 1800;  // ms to hold for first emission
+const DWELL_REPEAT_MS     = DWELL_FIRST_MS * 2;  // ms for repeat of same letter
 
-  // state
-  let streaming   = false;
-  let loopTimer   = null;
-  let intervalMs  = 300;
-  let totalPreds  = 0;
-  let transcript  = [];
-  let lastLetter  = null;
+const video    = document.getElementById('video');
+const canvas   = document.getElementById('canvas');
+const ctx      = canvas.getContext('2d');
+const hudTag   = document.getElementById('hud-tag');
+const hudLetter= document.getElementById('hud-letter');
+const hudState = document.getElementById('hud-state');
+const flash    = document.getElementById('flash');
+const idleMsg  = document.getElementById('idle-msg');
+const outEl    = document.getElementById('output-sentence');
+const confBar  = document.getElementById('conf-bar');
+const confVal  = document.getElementById('conf-val');
+const bufBar   = document.getElementById('buf-bar');
+const bufVal   = document.getElementById('buf-val');
+const dwellArc = document.getElementById('dwell-arc');
+const dwellPct = document.getElementById('dwell-pct');
+const dwellInfo= document.getElementById('dwell-info');
+const eventLog = document.getElementById('event-log');
+const alphaGrid= document.getElementById('alpha-grid');
+const histEl   = document.getElementById('letter-history');
+const fpsEl    = document.getElementById('fps-counter');
+const backendStatusEl = document.getElementById('backend-status');
+const footerInfo = document.getElementById('footer-info');
 
-  // fps tracking
-  let fpsFrames = 0, fpsLast = performance.now();
+// ── State ────────────────────────────────────────────────────
+let stream      = null;
+let capturing   = false;
+let armed       = false;
+let outputText  = '';
+let recentLetters = [];
+let bufferCount = 0;
 
-  // ── CAMERA INIT ──────────────────────────────────────────────
-  startBtn.addEventListener('click', async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
-      });
-      video.srcObject = stream;
-      await video.play();
-      startBtn.classList.add('hidden');
-      streaming = true;
-      setStatus('live');
-      startLoop();
-    } catch(e) {
-      showToast('camera access denied');
-      setStatus('error');
+// Dwell state
+let dwellLabel     = null;
+let dwellStartMs   = null;
+let dwellEmitted   = 0;   // how many times emitted this dwell
+
+// FPS tracking
+let fpsFrames = 0;
+let fpsLast   = performance.now();
+
+// Skeleton connections (MediaPipe hand)
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+
+// ── Build alphabet grid ──────────────────────────────────────
+const CLASSES = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), 'del', 'spc', '—'];
+const cells = {};
+CLASSES.forEach(c => {
+  const el = document.createElement('div');
+  el.className = 'alpha-cell';
+  el.textContent = c;
+  el.id = 'cell-' + c;
+  alphaGrid.appendChild(el);
+  cells[c] = el;
+});
+
+// ── Camera ──────────────────────────────────────────────────
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+    video.srcObject = stream;
+    await video.play();
+
+    canvas.width  = video.videoWidth  || 1280;
+    canvas.height = video.videoHeight || 720;
+
+    capturing = true;
+    armed     = true;
+    document.getElementById('start-btn').disabled = true;
+    document.getElementById('arm-btn').disabled   = false;
+    document.getElementById('stop-btn').disabled  = false;
+    document.getElementById('arm-btn').textContent = '◉ ARMED';
+    footerInfo.textContent = 'ARMED — CAPTURING AT 8FPS';
+    backendStatusEl.textContent = 'ONLINE';
+    backendStatusEl.style.color = '#39ff7e';
+    log('Camera online. System armed.', 'fresh');
+    captureLoop();
+  } catch (e) {
+    log('Camera access denied: ' + e.message, 'warn');
+  }
+}
+
+function stopCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  capturing = false; armed = false;
+  idleMsg.style.display = 'flex';
+  hudTag.style.display  = 'none';
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('arm-btn').disabled   = true;
+  document.getElementById('stop-btn').disabled  = true;
+  backendStatusEl.textContent = 'OFFLINE';
+  backendStatusEl.style.color = '';
+  footerInfo.textContent = 'SYSTEM IDLE';
+  log('Stream stopped.', 'warn');
+}
+
+function toggleArmed() {
+  armed = !armed;
+  const btn = document.getElementById('arm-btn');
+  btn.textContent  = armed ? '◉ ARMED' : '○ DISARMED';
+  btn.classList.toggle('armed', armed);
+  footerInfo.textContent = armed ? 'ARMED — CAPTURING' : 'DISARMED — PAUSED';
+  log(armed ? 'System armed.' : 'System disarmed.', 'fresh');
+  if (!armed) resetDwell();
+}
+
+// ── Capture loop ─────────────────────────────────────────────
+let lastCapture = 0;
+
+function captureLoop() {
+  if (!capturing) return;
+
+  const draw = () => {
+    if (!capturing) return;
+    requestAnimationFrame(draw);
+
+    if (!video.readyState || video.readyState < 2) return;
+
+    // sync canvas dims
+    if (canvas.width !== video.videoWidth) {
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.style.width  = video.clientWidth + 'px';
+      canvas.style.height = video.clientHeight + 'px';
     }
-  });
 
-  // ── RESIZE CANVAS TO FEED ─────────────────────────────────────
-  function resizeCanvas() {
-    const area = document.getElementById('feed-area');
-    canvas.width  = area.clientWidth;
-    canvas.height = area.clientHeight;
-  }
-  window.addEventListener('resize', resizeCanvas);
-  resizeCanvas();
-
-  // ── MAIN LOOP ─────────────────────────────────────────────────
-  function startLoop() {
-    if (loopTimer) clearInterval(loopTimer);
-    loopTimer = setInterval(captureAndPredict, intervalMs);
-  }
-
-  async function captureAndPredict() {
-    if (!streaming || video.readyState < 2) return;
-
-    // draw current frame to canvas (scaled)
-    const vw = video.videoWidth  || canvas.width;
-    const vh = video.videoHeight || canvas.height;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // fps
-    fpsFrames++;
     const now = performance.now();
-    if (now - fpsLast >= 1000) {
-      document.getElementById('fps-counter').textContent = fpsFrames + ' fps';
-      fpsFrames = 0; fpsLast = now;
+    if (armed && (now - lastCapture) >= CAPTURE_INTERVAL_MS) {
+      lastCapture = now;
+      sendFrame();
+      fpsFrames++;
+      if (now - fpsLast >= 1000) {
+        fpsEl.textContent = fpsFrames;
+        fpsFrames = 0;
+        fpsLast   = now;
+      }
     }
+  };
+  requestAnimationFrame(draw);
+}
 
-    // get blob and POST
-    canvas.toBlob(async (blob) => {
+// ── Send frame to backend ─────────────────────────────────────
+let pending = false;
+
+async function sendFrame() {
+  if (pending) return;
+  pending = true;
+
+  const tmp = document.createElement('canvas');
+  tmp.width  = video.videoWidth  || 640;
+  tmp.height = video.videoHeight || 480;
+  const tctx = tmp.getContext('2d');
+  // mirror for natural webcam feel, backend sees mirrored too
+  tctx.drawImage(video, 0, 0);
+
+  tmp.toBlob(async blob => {
+    try {
+      setDot('dot-clf', 'processing');
+      setLabel('label-clf', 'CLASSIFYING...');
+
       const fd = new FormData();
       fd.append('file', blob, 'frame.jpg');
+      const resp = await fetch(BACKEND + '/predict', { method: 'POST', body: fd });
+      const data = await resp.json();
+      handleResult(data);
+    } catch (e) {
+      setDot('dot-clf', '');
+      setLabel('label-clf', 'BACKEND UNREACHABLE');
+      log('Backend error: ' + e.message, 'warn');
+    } finally {
+      pending = false;
+    }
+  }, 'image/jpeg', 0.80);
+}
 
-      const url = document.getElementById('api-url').value.trim();
-      let data;
-      try {
-        const res = await fetch(url, { method: 'POST', body: fd });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        data = await res.json();
-      } catch(e) {
-        showToast('api error — check endpoint');
-        setStatus('error');
-        return;
-      }
+// ── Handle backend result ─────────────────────────────────────
+let lastHandSeen = false;
+let lastLandmarks = null;
+let lastBbox      = null;
+let currentConf   = 0;
 
-      setStatus('live');
-      handlePrediction(data);
+function handleResult(data) {
+  const hasHand = !data.error || data.error === 'not stable yet' || data.error === 'cooldown' || data.letter !== undefined;
+  const hasError = data.error && data.error !== 'cooldown';
 
-    }, 'image/jpeg', 0.85);
+  // Hand presence
+  if (data.error === 'no hand') {
+    setHandAbsent();
+    resetDwell();
+    clearCanvas();
+    updateConfidence(0);
+    updateBuffer(0);
+    setDot('dot-clf', '');
+    setLabel('label-clf', 'NO HAND DETECTED');
+    return;
   }
 
-  // ── HANDLE PREDICTION ─────────────────────────────────────────
-  // Expected: { letter: "A", confidence: 0.94, bbox: [x, y, w, h] }
-  // bbox is in 0-1 normalised coords OR pixel coords — auto-detected
-  function handlePrediction(data) {
-    const letter = (data.letter || data.predicted_letter || data.class || '?').toUpperCase();
-    const conf   = parseFloat(data.confidence || data.conf || 0);
-    const bbox   = data.bbox || data.bounding_box || null;
-
-    totalPreds++;
-    document.getElementById('stat-total').textContent = totalPreds;
-    document.getElementById('stat-conf').textContent  = (conf * 100).toFixed(0) + '%';
-    document.getElementById('conf-counter').textContent = (conf * 100).toFixed(0) + '%';
-
-    // update sidebar
-    document.getElementById('pred-letter-large').textContent = letter;
-    document.getElementById('pred-class').textContent = 'ASL class · frame #' + totalPreds;
-    document.getElementById('conf-bar').style.width = (conf * 100) + '%';
-
-    // big overlay letter
-    bigLetter.textContent = letter;
-    bigLetter.classList.remove('show');
-    void bigLetter.offsetWidth; // reflow trick
-    bigLetter.classList.add('show');
-
-    // draw bbox on canvas
-    if (bbox) drawBBox(bbox, letter, conf);
-
-    // transcript append (only on hold — same letter for 2+ frames)
-    if (letter === lastLetter) {
-      // append on stable hold
-    } else {
-      if (conf > 0.5) appendTranscript(letter, conf);
-      lastLetter = letter;
-    }
+  if (data.error === 'hand moving') {
+    setDot('dot-hand', 'active');
+    setLabel('label-hand', 'HAND DETECTED');
+    setDot('dot-stable', '');
+    setLabel('label-stable', 'MOVING — STABILIZE');
+    setDot('dot-clf', '');
+    setLabel('label-clf', 'WAITING FOR STABLE');
+    idleMsg.style.display = 'none';
+    setHudState('moving', '—', 'MOVING');
+    resetDwell();
+    updateConfidence(data.confidence || 0);
+    return;
   }
 
-  // ── DRAW BOUNDING BOX ─────────────────────────────────────────
-  function drawBBox(bbox, letter, conf) {
-    let [x, y, w, h] = bbox;
+  if (data.error === 'low confidence') {
+    setDot('dot-hand', 'active');
+    setDot('dot-stable', 'active');
+    setLabel('label-stable', 'STABLE');
+    setDot('dot-clf', '');
+    setLabel('label-clf', 'LOW CONFIDENCE');
+    idleMsg.style.display = 'none';
+    setHudState('detecting', '?', 'LOW CONF');
+    updateConfidence(data.confidence || 0);
+    resetDwell();
+    return;
+  }
 
-    // normalised → pixel
-    if (x <= 1 && y <= 1 && w <= 1 && h <= 1) {
-      x *= canvas.width;  y *= canvas.height;
-      w *= canvas.width;  h *= canvas.height;
+  if (data.error === 'not stable yet') {
+    setDot('dot-hand', 'active');
+    setDot('dot-stable', 'active');
+    setLabel('label-stable', 'STABLE');
+    setDot('dot-clf', 'processing');
+    setLabel('label-clf', 'BUFFERING VOTES');
+    idleMsg.style.display = 'none';
+    setHudState('detecting', data.letter || '—', 'BUFFERING');
+    updateConfidence(data.confidence || 0);
+    const bCount = parseInt(bufVal.textContent) || 0;
+    updateBuffer(Math.min(bCount + 1, 10));
+    return;
+  }
+
+  if (data.error === 'cooldown') {
+    setDot('dot-clf', 'active');
+    setLabel('label-clf', 'COOLDOWN');
+    updateConfidence(data.confidence || 0);
+    // continue dwell tracking
+    tickDwell(data.letter || dwellLabel, data.confidence || 0);
+    return;
+  }
+
+  // ── Successful detection ──────────────────────────────────
+  if (data.letter) {
+    setDot('dot-hand', 'active');
+    setLabel('label-hand', data.handedness || 'HAND');
+    setDot('dot-stable', 'active');
+    setLabel('label-stable', 'STABLE');
+    setDot('dot-clf', 'active');
+    setLabel('label-clf', 'CONFIDENT');
+    idleMsg.style.display = 'none';
+    updateConfidence(data.confidence || 0);
+    updateBuffer(10);
+    drawSkeleton(data.landmarks, canvas.width, canvas.height, true);
+
+    // Bbox for HUD positioning
+    if (data.bbox) {
+      lastBbox = data.bbox;
+      positionHud(data.bbox);
     }
 
-    // scale to canvas if bbox was for original video size
-    const scaleX = canvas.width  / (video.videoWidth  || canvas.width);
-    const scaleY = canvas.height / (video.videoHeight || canvas.height);
-    // only scale if coords look like pixel coords for video size
-    if (x > 1 || y > 1) {
-      x *= scaleX; y *= scaleY; w *= scaleX; h *= scaleY;
-    }
+    tickDwell(data.letter, data.confidence);
+  }
+}
 
-    // glow rect
-    ctx.save();
-    ctx.strokeStyle = '#00e5ff';
+// ── Dwell logic ───────────────────────────────────────────────
+function tickDwell(label, conf) {
+  const now = Date.now();
+
+  if (label !== dwellLabel) {
+    // New sign → reset
+    dwellLabel   = label;
+    dwellStartMs = now;
+    dwellEmitted = 0;
+    setHudState('hold', label, 'HOLD STILL');
+  }
+
+  const elapsed = now - dwellStartMs;
+  const target  = dwellEmitted === 0 ? DWELL_FIRST_MS : DWELL_REPEAT_MS;
+  const pct     = Math.min(elapsed / target, 1.0);
+
+  // Update arc
+  const C = 138.23;
+  dwellArc.style.strokeDashoffset = (C - C * pct).toFixed(2);
+  dwellPct.textContent = Math.round(pct * 100) + '%';
+  dwellArc.classList.toggle('repeat', dwellEmitted > 0);
+
+  dwellInfo.innerHTML = dwellEmitted === 0
+    ? 'HOLD STILL<br>TO REGISTER<br>LETTER'
+    : `REPEAT<br>DETECTED<br>+${dwellEmitted}`;
+
+  if (pct >= 1.0) {
+    // Emit
+    emitLetter(label, conf);
+    dwellStartMs = now;
+    dwellEmitted++;
+  }
+}
+
+function resetDwell() {
+  dwellLabel   = null;
+  dwellStartMs = null;
+  dwellEmitted = 0;
+  dwellArc.style.strokeDashoffset = '138.23';
+  dwellPct.textContent = '0%';
+  dwellArc.classList.remove('repeat');
+  dwellInfo.innerHTML = 'HOLD STILL<br>TO REGISTER<br>LETTER';
+}
+
+// ── Emit letter ───────────────────────────────────────────────
+function emitLetter(letter, conf) {
+  if (letter === 'nothing') return;
+
+  if (letter === 'del') {
+    outputText = outputText.slice(0, -1);
+  } else if (letter === 'space') {
+    outputText += ' ';
+  } else {
+    outputText += letter;
+  }
+
+  renderOutput(letter !== 'del' && letter !== 'space' ? letter : null);
+
+  // Flash
+  flash.classList.remove('pop');
+  void flash.offsetWidth;
+  flash.classList.add('pop');
+
+  // HUD confirmed
+  setHudState('confirmed', letter, 'CONFIRMED ✓');
+  setTimeout(() => setHudState('hold', letter, 'HOLD STILL'), 600);
+
+  // Alphabet highlight
+  highlightAlpha(letter.toUpperCase());
+
+  // Recent
+  recentLetters.unshift(letter);
+  if (recentLetters.length > 10) recentLetters.pop();
+  renderHistory();
+
+  // Log
+  const repeat = dwellEmitted > 0 ? ` (×${dwellEmitted + 1})` : '';
+  log(`EMIT: ${letter}${repeat}  conf=${(conf * 100).toFixed(0)}%`, 'letter-emit');
+}
+
+function renderOutput(newChar) {
+  if (!outputText && !newChar) {
+    outEl.innerHTML = '&nbsp;';
+    return;
+  }
+  if (!newChar) {
+    outEl.textContent = outputText || '';
+    return;
+  }
+  const base = outputText.slice(0, -1);
+  outEl.innerHTML = (base || '') + `<span class="new-char">${outputText.slice(-1)}</span>`;
+}
+
+function highlightAlpha(ltr) {
+  Object.values(cells).forEach(c => c.classList.remove('active'));
+  if (cells[ltr]) cells[ltr].classList.add('active');
+  setTimeout(() => { if (cells[ltr]) cells[ltr].classList.remove('active'); }, 800);
+  Object.values(cells).forEach(c => c.classList.remove('recent'));
+  if (cells[ltr]) setTimeout(() => { if (cells[ltr]) cells[ltr].classList.add('recent'); }, 800);
+}
+
+function renderHistory() {
+  histEl.innerHTML = '';
+  recentLetters.forEach((l, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'hist-chip' + (i === 0 ? ' recent' : '');
+    chip.textContent = l;
+    histEl.appendChild(chip);
+  });
+}
+
+// ── HUD ──────────────────────────────────────────────────────
+function positionHud(bbox) {
+  // mirrored x: (canvas.width - bbox.x - bbox.w)
+  const mx = canvas.width - bbox[0] - bbox[2];
+  const my = bbox[1];
+
+  const cRect = canvas.getBoundingClientRect();
+  hudTag.style.display = 'block';
+  hudTag.style.left = (mx - 10) + 'px';
+  hudTag.style.top  = Math.max(0, my - 70) + 'px';
+}
+
+function setHudState(cls, letter, stateText) {
+  hudLetter.textContent = letter;
+  hudState.className    = 'hud-state ' + cls;
+  hudState.textContent  = stateText;
+  if (lastBbox) {
+    positionHud(lastBbox);
+    hudTag.style.display = 'block';
+  }
+}
+
+// ── Canvas skeleton draw ──────────────────────────────────────
+// NOTE: landmarks from backend aren't included in current response payload.
+// This draws a placeholder glow ring where the hand bbox is.
+// When you extend the backend to return landmarks, swap in the full skeleton draw.
+
+function clearCanvas() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  hudTag.style.display = 'none';
+  lastBbox = null;
+}
+
+// Call this from wherever you have landmarks array (21 points) + canvas dims
+function drawSkeleton(landmarks, W, H, isStable) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!landmarks || !landmarks.length) return;
+
+  const pts = landmarks.map(lm => ({
+    x: lm.x * W,
+    y: lm.y * H
+  }));
+
+  // Connections — glowing lines
+  CONNECTIONS.forEach(([a, b]) => {
+    ctx.beginPath();
+    ctx.moveTo(pts[a].x, pts[a].y);
+    ctx.lineTo(pts[b].x, pts[b].y);
+    ctx.strokeStyle = isStable ? 'rgba(0,245,255,0.55)' : 'rgba(255,59,92,0.45)';
     ctx.lineWidth   = 1.5;
-    ctx.shadowColor = '#00e5ff';
+    ctx.shadowColor = isStable ? '#00f5ff' : '#ff3b5c';
+    ctx.shadowBlur  = 8;
+    ctx.stroke();
+  });
+
+  // Knuckle dots
+  [0,5,9,13,17].forEach(i => {
+    ctx.beginPath();
+    ctx.arc(pts[i].x, pts[i].y, 5, 0, Math.PI * 2);
+    ctx.fillStyle   = isStable ? 'rgba(0,245,255,0.9)' : 'rgba(255,184,0,0.9)';
+    ctx.shadowColor = isStable ? '#00f5ff' : '#ffb800';
     ctx.shadowBlur  = 12;
-    ctx.strokeRect(x, y, w, h);
+    ctx.fill();
+  });
 
-    // corner brackets
-    const cs = 14;
-    ctx.lineWidth = 2.5;
-    [[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([cx,cy], i) => {
-      const sx = (i % 2 === 0) ? 1 : -1;
-      const sy = (i < 2) ? 1 : -1;
-      ctx.beginPath();
-      ctx.moveTo(cx + sx * cs, cy);
-      ctx.lineTo(cx, cy);
-      ctx.lineTo(cx, cy + sy * cs);
-      ctx.stroke();
-    });
+  // Fingertip dots
+  [4,8,12,16,20].forEach(i => {
+    ctx.beginPath();
+    ctx.arc(pts[i].x, pts[i].y, 4, 0, Math.PI * 2);
+    ctx.fillStyle   = '#ffffff';
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur  = 10;
+    ctx.fill();
+  });
 
-    // label pill
-    const label  = letter + '  ' + (conf * 100).toFixed(0) + '%';
-    const fSize  = 12;
-    ctx.font     = `500 ${fSize}px 'Share Tech Mono', monospace`;
-    const tw     = ctx.measureText(label).width;
-    const ph = 20, pw = tw + 16;
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(0,0,0,0.75)';
-    ctx.fillRect(x, y - ph - 2, pw, ph);
-    ctx.strokeStyle = '#00e5ff';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y - ph - 2, pw, ph);
-    ctx.fillStyle = '#00e5ff';
-    ctx.fillText(label, x + 8, y - ph + 13);
+  // Other joints
+  landmarks.forEach((_, i) => {
+    if ([0,4,5,8,9,12,13,16,17,20].includes(i)) return;
+    ctx.beginPath();
+    ctx.arc(pts[i].x, pts[i].y, 3, 0, Math.PI * 2);
+    ctx.fillStyle   = isStable ? 'rgba(0,201,167,0.8)' : 'rgba(255,59,92,0.8)';
+    ctx.shadowColor = isStable ? '#00c9a7' : '#ff3b5c';
+    ctx.shadowBlur  = 6;
+    ctx.fill();
+  });
 
-    ctx.restore();
-  }
+  ctx.shadowBlur = 0;
+}
 
-  // ── TRANSCRIPT ────────────────────────────────────────────────
-  function appendTranscript(letter, conf) {
-    transcript.push(letter);
-    const el = document.createElement('span');
-    el.className = 't-letter' + (conf > 0.85 ? ' accent' : '');
-    el.textContent = letter;
-    const tc = document.getElementById('transcript');
-    // clear placeholder
-    if (tc.children.length === 1 && tc.children[0].tagName !== 'SPAN') tc.innerHTML = '';
-    tc.appendChild(el);
-    tc.scrollTop = tc.scrollHeight;
-  }
+// ── UI helpers ───────────────────────────────────────────────
+function setDot(id, state) {
+  const el = document.getElementById(id);
+  el.className = 'signal-dot ' + (state || '');
+}
+function setLabel(id, text) {
+  document.getElementById(id).textContent = text;
+}
+function setHandAbsent() {
+  setDot('dot-hand', '');
+  setLabel('label-hand', 'NO HAND');
+  setDot('dot-stable', '');
+  setLabel('label-stable', '—');
+  idleMsg.style.display = 'flex';
+  hudTag.style.display  = 'none';
+  lastBbox = null;
+}
 
-  function addSpace() {
-    const tc = document.getElementById('transcript');
-    tc.appendChild(document.createTextNode(' '));
-    transcript.push(' ');
-  }
+function updateConfidence(val) {
+  currentConf = val;
+  confVal.textContent = val.toFixed(2);
+  confBar.style.width = (val * 100) + '%';
+  confBar.className   = 'meter-fill ' + (val < 0.5 ? 'low' : val < 0.75 ? 'mid' : 'high');
+}
 
-  function deleteLast() {
-    transcript.pop();
-    const tc = document.getElementById('transcript');
-    if (tc.lastChild) tc.removeChild(tc.lastChild);
-  }
+function updateBuffer(n) {
+  bufVal.textContent = n + '/10';
+  bufBar.style.width = (n / 10 * 100) + '%';
+}
 
-  function clearTranscript() {
-    transcript = [];
-    document.getElementById('transcript').innerHTML =
-      '<span style="color:var(--text-dim);font-size:10px">_</span>';
-  }
+function log(msg, cls) {
+  const el = document.createElement('div');
+  el.className  = 'event-entry fresh ' + (cls || '');
+  el.textContent = '> ' + msg;
+  eventLog.prepend(el);
+  setTimeout(() => el.classList.remove('fresh'), 800);
+  const entries = eventLog.children;
+  while (entries.length > 30) eventLog.removeChild(eventLog.lastChild);
+}
 
-  function copyTranscript() {
-    navigator.clipboard.writeText(transcript.join('')).then(() => showToast('copied to clipboard'));
-  }
+// ── Output controls ──────────────────────────────────────────
+function addSpace()   { outputText += ' '; renderOutput(null); }
+function backspace()  { outputText = outputText.slice(0, -1); renderOutput(null); }
+function clearOutput(){ outputText = ''; outEl.innerHTML = '&nbsp;'; }
 
-  // ── STATUS ────────────────────────────────────────────────────
-  function setStatus(state) {
-    const dot  = document.getElementById('status-dot');
-    const text = document.getElementById('status-text');
-    dot.className = 'dot ' + state;
-    text.textContent = state === 'live' ? 'live' : state === 'error' ? 'error' : 'standby';
-  }
+// ── Init log ─────────────────────────────────────────────────
+log('System initialized.', 'fresh');
+log('Backend: ' + BACKEND, '');
+log('Dwell threshold: ' + DWELL_FIRST_MS + 'ms', '');
+log('Repeat threshold: ' + DWELL_REPEAT_MS + 'ms', '');
 
-  // ── INTERVAL ─────────────────────────────────────────────────
-  function updateInterval(val) {
-    intervalMs = parseInt(val);
-    document.getElementById('interval-val').textContent = val + 'ms';
-    if (streaming) startLoop();
-  }
-
-  // ── TOAST ─────────────────────────────────────────────────────
-  let toastTimer;
-  function showToast(msg) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
-  }
+// ── Expose drawSkeleton for external use ─────────────────────
+window.drawSkeleton = drawSkeleton;
 </script>
 </body>
 </html>

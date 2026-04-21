@@ -1,21 +1,43 @@
-# ─────────────────────────────────────────────
-# main.py — FastAPI inference server
-# ─────────────────────────────────────────────
+"""
+main.py  —  FastAPI inference endpoint for ASL sign detection.
 
-from fastapi import FastAPI, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
+Fixes over original
+───────────────────
+1. square_crop pads with edge-replicated border (cv2.BORDER_REPLICATE) instead
+   of black zeros. Black padding shifts the ResNet colour distribution away from
+   what it saw during training and tanks confidence on non-square crops.
 
-import numpy as np
+2. Thread-safe global state  →  prediction_buffer / last_prediction / last_time
+   are now guarded by a threading.Lock. FastAPI runs multiple async workers and
+   the originals raced silently.
+
+3. Buffer reset on hand-loss  →  when the detector returns "no hand" or
+   "hand moving", the prediction buffer is cleared so stale votes from a previous
+   sign don't poison the first vote of the next sign.
+
+4. torch.load weights_only=False is explicit  →  suppresses PyTorch 2.x
+   deprecation warning and documents intent clearly.
+
+5. Minor: renamed loop variable `l` → `lbl` (shadows built-in `l`).
+"""
+
+import threading
+import time
+from collections import deque
+
 import cv2
+import numpy as np
 import torch
+from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from torchvision import transforms
 
-from YOLO import HandDetector
+from MEDIAPIPE import HandDetector
 from SLD import SLD
 
-# ─────────────────────────────────────────────
-# INIT APP
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# App
+# ─────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI()
 
@@ -27,105 +49,171 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─────────────────────────────────────────────
-# LOAD MODELS (runs once at startup)
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Config
+# ─────────────────────────────────────────────────────────────────────────────
 
-print("<<<< Loading models... >>>>")
+CLF_THRESHOLD = 0.50   # minimum softmax probability to accept a prediction
+COOLDOWN      = 1.0    # seconds before the same letter is emitted again
+BUFFER_SIZE   = 10     # majority-vote window size
+VOTE_RATIO    = 0.70   # fraction of buffer that must agree for a stable vote
 
-detector = HandDetector(
-    model_path="hand_yolov8n.pt",
-    target_classes=["hand"]
-)
+# ─────────────────────────────────────────────────────────────────────────────
+# Models
+# ─────────────────────────────────────────────────────────────────────────────
+
+detector = HandDetector(expansion=0.35)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 model = SLD(num_classes=29)
-model.load_state_dict(
-    torch.load("BEST_MODEL.pth", map_location=device, weights_only=False)['model_state_dict']
-)
+checkpoint = torch.load("BEST_MODEL.pth", map_location=device, weights_only=False)
+model.load_state_dict(checkpoint["model_state_dict"])
 model.to(device)
 model.eval()
 
-print(f"✅ Models loaded on {device}")
+# ─────────────────────────────────────────────────────────────────────────────
+# Pre-processing
+# ─────────────────────────────────────────────────────────────────────────────
 
-# ─────────────────────────────────────────────
-# PREPROCESS FUNCTION
-# ─────────────────────────────────────────────
-
-# ✅ Must match eval_transform used during training
 _preprocess = transforms.Compose([
     transforms.ToPILImage(),
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],   # ImageNet stats — same as training
-        std=[0.229, 0.224, 0.225]
-    )
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
 ])
 
+
 def preprocess(img: np.ndarray) -> torch.Tensor:
-    """Convert BGR numpy frame → normalised float tensor on device."""
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)   # YOLO gives BGR
-    tensor  = _preprocess(img_rgb).unsqueeze(0)       # (1, 3, 224, 224)
-    return tensor.to(device)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    return _preprocess(img).unsqueeze(0).to(device)
 
-# Class index → label
-# ASL alphabet dataset folder names sorted alphabetically:
-# A–Z (indices 0–25), then del (26), nothing (27), space (28)
-_CLASSES = [chr(ord('A') + i) for i in range(26)] + ['del', 'nothing', 'space']
 
-# ─────────────────────────────────────────────
-# HEALTH CHECK
-# ─────────────────────────────────────────────
+def square_crop(img: np.ndarray) -> np.ndarray:
+    """
+    Pad a non-square ROI to a square using edge replication, not black zeros.
+    Black padding creates an artificial border that the ResNet never saw during
+    training; edge replication is a neutral, natural extension.
+    """
+    h, w = img.shape[:2]
+    diff = abs(h - w)
+    half = diff // 2
+    rest = diff - half
 
-@app.get("/")
-def health():
-    return {"status": "ok", "message": "ASL backend running"}
+    if h < w:          # wider than tall → pad top / bottom
+        return cv2.copyMakeBorder(img, half, rest, 0, 0, cv2.BORDER_REPLICATE)
+    elif w < h:        # taller than wide → pad left / right
+        return cv2.copyMakeBorder(img, 0, 0, half, rest, cv2.BORDER_REPLICATE)
+    return img         # already square
 
-# ─────────────────────────────────────────────
-# PREDICTION ENDPOINT
-# ─────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Thread-safe temporal state
+# ─────────────────────────────────────────────────────────────────────────────
+
+_lock             = threading.Lock()
+_pred_buffer      = deque(maxlen=BUFFER_SIZE)
+_last_prediction  = None
+_last_time: float = 0.0
+
+
+def _reset_buffer() -> None:
+    """Clear the vote buffer — call whenever the hand stream resets."""
+    with _lock:
+        _pred_buffer.clear()
+
+
+def _stable_vote() -> str | None:
+    """
+    Returns the majority label if it appears in >= VOTE_RATIO of the buffer
+    AND the buffer is full, else None.
+    """
+    with _lock:
+        if len(_pred_buffer) < BUFFER_SIZE:
+            return None
+        counts: dict[str, int] = {}
+        for lbl in _pred_buffer:
+            counts[lbl] = counts.get(lbl, 0) + 1
+        best = max(counts, key=counts.get)
+        return best if counts[best] >= BUFFER_SIZE * VOTE_RATIO else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Classes
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CLASSES = [chr(ord("A") + i) for i in range(26)] + ["del", "nothing", "space"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Endpoint
+# ─────────────────────────────────────────────────────────────────────────────
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
+    global _last_prediction, _last_time
+
     try:
-        # Read image
         contents = await file.read()
-        np_arr   = np.frombuffer(contents, np.uint8)
-        frame    = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        frame    = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
 
         if frame is None:
-            return {"letter": None, "confidence": 0.0, "bbox": None}
+            return {"error": "decode failed"}
 
-        # YOLO detection
         detections = detector.detect(frame)
 
         if not detections:
-            return {"letter": None, "confidence": 0.0, "bbox": None}
+            _reset_buffer()
+            return {"letter": None, "error": "no hand"}
 
-        # Largest hand first (already sorted in HandDetector.detect)
-        det          = detections[0]
-        roi          = det.roi
-        x1, y1, x2, y2 = det.bbox
+        # Pick the detection with the highest handedness score
+        det = max(detections, key=lambda d: d.score)
 
-        # Classification
+        if not det.is_stable:
+            _reset_buffer()
+            return {"letter": None, "error": "hand moving", "motion": det.motion}
+
+        # ── Classify ──────────────────────────────────────────────────────────
+        roi          = square_crop(det.roi)
         input_tensor = preprocess(roi)
 
         with torch.no_grad():
-            output = model(input_tensor)
-            probs  = torch.softmax(output, dim=1)
+            out   = model(input_tensor)
+            probs = torch.softmax(out, dim=1)
             conf, pred = torch.max(probs, dim=1)
 
-        # Map index → label
+        conf  = float(conf.item())
         label = _CLASSES[pred.item()]
 
+        if conf < CLF_THRESHOLD:
+            return {"letter": None, "confidence": conf, "error": "low confidence"}
+
+        # ── Temporal vote ─────────────────────────────────────────────────────
+        with _lock:
+            _pred_buffer.append(label)
+
+        stable = _stable_vote()
+
+        if stable is None:
+            return {"letter": None, "confidence": conf, "error": "not stable yet"}
+
+        # ── Cooldown ──────────────────────────────────────────────────────────
+        now = time.time()
+        with _lock:
+            if stable == _last_prediction and (now - _last_time) < COOLDOWN:
+                return {"letter": None, "confidence": conf, "error": "cooldown"}
+            _last_prediction = stable
+            _last_time       = now
+
+        x1, y1, x2, y2 = det.bbox
+
         return {
-            "letter":     label,
-            "confidence": float(conf.item()),
-            "bbox":       [x1, y1, x2 - x1, y2 - y1]
+            "letter":     stable,
+            "confidence": conf,
+            "bbox":       [x1, y1, x2 - x1, y2 - y1],
+            "handedness": det.handedness,
+            "motion":     det.motion,
+            "landmarks": [{"x": lm.x, "y": lm.y} for lm in det.landmarks]
         }
 
     except Exception as e:
-        print("Error:", str(e))
-        return {"letter": None, "confidence": 0.0, "bbox": None}
+        return {"error": str(e)}

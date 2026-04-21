@@ -16,7 +16,8 @@
 
 \begin{document}
 
-\title{Real-Time American Sign Language Detection Using YOLOv8 Hand Localization and ResNet-50 Classification}
+\title{Real-Time American Sign Language Detection Using MediaPipe Hand 
+Localization and ResNet-50 Classification}
 
 \author{
   \IEEEauthorblockN{Udit Asthana}
@@ -38,26 +39,51 @@
 \maketitle
 
 \begin{abstract}
-American Sign Language (ASL) is the primary mode of non-verbal communication for the hearing-impaired community. Automated real-time recognition of ASL gestures can bridge the communication gap between hearing-impaired and hearing individuals. This paper proposes a two-stage pipeline for real-time ASL alphabet recognition: hand region localization using YOLOv8, followed by letter classification using a fine-tuned ResNet-50 backbone with a custom classification head. The system is trained on the publicly available ASL Alphabet dataset from Kaggle and evaluated across 26 letter classes. A cosine annealing learning rate scheduler with linear warm-up, gradient clipping, and early stopping are employed to stabilize training. The proposed system achieves competitive accuracy and operates in real-time via a live webcam feed, with bounding box overlays and predicted letter labels rendered on each frame. A lightweight FastAPI-based frontend serves the inference pipeline for interactive use. This work demonstrates the viability of combining detection and classification CNNs for low-latency sign language recognition.
+American Sign Language (ASL) is the primary mode of non-verbal communication for 
+the hearing-impaired community. Automated real-time recognition of ASL gestures 
+can bridge the communication gap between hearing-impaired and hearing individuals. 
+This paper proposes a two-stage pipeline for real-time ASL alphabet recognition: 
+hand region localization using MediaPipe, followed by letter classification using a 
+fine-tuned ResNet-50 backbone with a custom classification head. 
+The system is trained on the publicly available ASL Alphabet dataset 
+from Kaggle and evaluated across 26 letter classes. A cosine annealing 
+learning rate scheduler with linear warm-up, gradient clipping, and early stopping are 
+employed to stabilize training. The proposed system achieves competitive accuracy and 
+operates in real-time via a live webcam feed, with bounding box overlays and predicted 
+letter labels rendered on each frame. A lightweight FastAPI-based frontend serves the 
+inference pipeline for interactive use. This work demonstrates the viability of 
+combining detection and classification CNNs for low-latency sign language recognition.
 \end{abstract}
 
 \begin{IEEEkeywords}
-sign language recognition, ASL, YOLOv8, ResNet-50, hand detection, real-time inference, deep learning, convolutional neural networks
+sign language recognition, ASL, MediaPipe, ResNet-50, hand detection, 
+real-time inference, deep learning, convolutional neural networks
 \end{IEEEkeywords}
 
 % -------------------------------------------------------
 \section{Introduction}
 
-Sign language serves as the primary communication medium for over 70 million deaf and hard-of-hearing individuals worldwide \cite{who2021}. American Sign Language (ASL), used predominantly in North America, employs a rich vocabulary of hand gestures and finger-spelling to convey words and concepts. Despite its widespread use, the absence of real-time automated translation tools remains a critical barrier in everyday communication with the hearing majority.
+Sign language serves as the primary mode of communication for over 
+70 million deaf and hard-of-hearing individuals worldwide \cite{who2021}. 
+American Sign Language (ASL), used predominantly in North America, employs a 
+rich vocabulary of hand gestures and finger-spelling to convey words and concepts. 
+Despite its widespread use, the absence of real-time automated translation tools 
+remains a critical barrier in everyday communication with the hearing majority.
 
-Recent advances in convolutional neural networks (CNNs) and real-time object detection frameworks have opened new avenues for gesture recognition. Systems that can process live video frames and return a classified gesture label within milliseconds represent a meaningful step toward accessible communication technology.
-
-This work proposes a cascaded two-stage architecture. In the first stage, a YOLOv8 \cite{redmon2016} object detector localizes the hand region within each camera frame, producing a tight bounding box crop. In the second stage, a fine-tuned ResNet-50 \cite{he2016} backbone classifies the cropped hand image into one of 26 ASL alphabet letters. The result is overlaid on the live video stream in real time.
+Recent advances in convolutional neural networks (CNNs) and real-time object 
+detection frameworks have opened new avenues for gesture recognition. Systems 
+that can process live video frames and return a classified gesture label within 
+milliseconds represent a meaningful step toward accessible communication technology.
+aa MediaPipe object detector localizes the hand region within each 
+camera fa MediaPipe hand tracking module localizes the hand region within each 
+camera frame, producing a tight bounding box crop. In the second stage, a fine-tuned 
+ResNet-50 \cite{he2016} backbone classifies the cropped hand image into one of 26 ASL 
+alphabet letters. The result is overlaid on the live video stream in real time.
 
 Our contributions are as follows:
 \begin{itemize}
     \item A modular training pipeline with configurable optimizer, scheduler, and early stopping, implemented in PyTorch.
-    \item Integration of YOLOv8-based hand detection with a ResNet-50 classification head for end-to-end ASL letter recognition.
+    \item Integration of MediaPipe-based hand detection with a ResNet-50 classification head for end-to-end ASL letter recognition.
     \item A real-time inference module with webcam integration and visual feedback.
     \item A FastAPI web interface enabling browser-based interaction with the live pipeline.
 \end{itemize}
@@ -69,7 +95,7 @@ Early sign language recognition systems relied heavily on sensor-based approache
 
 With the rise of deep learning, image-based approaches became dominant. Convolutional networks trained on static hand images have demonstrated strong classification performance on isolated gestures \cite{pigou2015}. Transfer learning using ImageNet-pretrained backbones such as VGG-16, ResNet, and MobileNet has further improved accuracy on smaller, domain-specific datasets.
 
-Real-time detection-classification pipelines using YOLO variants have been explored for gesture spotting, but comprehensive two-stage systems targeting the full ASL alphabet in a live-camera setting remain relatively underexplored. This work builds on these foundations to deliver a practical, deployable system.
+Real-time landmark-based real-time hand tracking systems have been explored for gesture spotting, but comprehensive two-stage systems targeting the full ASL alphabet in a live-camera setting remain relatively underexplored. This work builds on these foundations to deliver a practical, deployable system.
 
 % -------------------------------------------------------
 \section{Dataset}
@@ -86,7 +112,7 @@ For this work, the dataset is restricted to the 26 alphabetic gesture classes. I
 The proposed pipeline operates in two sequential stages at inference time:
 
 \begin{enumerate}
-    \item \textbf{Hand Detection (YOLOv8):} Each incoming video frame is passed to a YOLOv8 model that produces bounding boxes around detected hand regions.
+    \item \textbf{Hand Detection (MediaPipe):} Each incoming video frame is passed to a MediaPipe model that produces bounding boxes around detected hand regions.
     \item \textbf{Letter Classification (ResNet-50):} The detected hand crop is extracted, resized, and passed to the classification model, which returns a probability distribution over 26 ASL letter classes.
 \end{enumerate}
 
@@ -94,7 +120,29 @@ The predicted letter and bounding box are overlaid on the original frame for vis
 
 \subsection{Hand Detection Module}
 
-YOLOv8 \cite{redmon2016}, a state-of-the-art single-stage object detector, is employed for hand localization. The model processes each frame in a single forward pass, returning bounding box coordinates, confidence scores, and class labels for all detected objects. In our pipeline, detections corresponding to the \texttt{person} class (which subsumes hands in the default COCO-trained model) are filtered and cropped for downstream classification. Future work will explore a domain-specifically fine-tuned YOLO model trained on hand-only bounding box datasets.
+MediaPipe Hands is used for real-time hand localization and tracking. 
+Unlike traditional object detection frameworks, MediaPipe employs a 
+two-stage pipeline consisting of a palm detector followed by a hand 
+landmark model. The system directly predicts 21 2D keypoints corresponding 
+to anatomical hand joints, along with a bounding region derived from these 
+landmarks.
+
+Given an input frame, MediaPipe returns:
+\begin{itemize}
+    \item 21 hand landmarks (normalized coordinates)
+    \item Handedness (left/right classification)
+    \item A region of interest (ROI) derived from landmark extents
+\end{itemize}
+
+This approach provides fine-grained spatial information about finger 
+articulation, enabling robust downstream classification even in cluttered 
+backgrounds. The ROI extracted from the landmarks is used as input to the 
+classification network.
+
+.
+
+\subsection{Classification Model (SLD)}
+ets.
 
 \subsection{Classification Model (SLD)}
 
@@ -179,8 +227,8 @@ All training runs are logged via Weights \& Biases (W\&B) \cite{wandb}, tracking
 
 At inference time, frames are captured via OpenCV from a live webcam feed. Each frame undergoes the following steps:
 
-\begin{enumerate}
-    \item \textbf{Hand Detection:} YOLOv8 processes the BGR frame and returns bounding boxes.
+\begin{enMediaPipe
+    \item \textbf{Hand Detection:} MediaPipe processes the BGR frame and returns bounding boxes.
     \item \textbf{Crop and Resize:} The highest-confidence bounding box crop is resized to $50 \times 50$ and normalized.
     \item \textbf{Classification:} The crop is passed through the trained SLD model to obtain a predicted letter.
     \item \textbf{Overlay:} The bounding box and predicted label are drawn onto the original frame using OpenCV.
@@ -211,11 +259,10 @@ We anticipate competitive classification performance given the depth of the ResN
 % -------------------------------------------------------
 \section{Conclusion}
 
-This paper presents a real-time ASL alphabet recognition system combining YOLOv8 hand detection with ResNet-50 classification. The system is trained with a robust pipeline incorporating warm-up scheduling, gradient clipping, and early stopping, and is designed for live deployment via a webcam and FastAPI interface. This work addresses a meaningful accessibility problem and establishes a practical baseline for further extensions, including full ASL word-level recognition and continuous signing.
+This paper presents a real-tMediaPipe8phabet recognition system combining MediaPipe hand detection with ResNet-50 classification. The system is trained with a robust pipeline incorporating warm-up scheduling, gradient clipping, and early stopping, and is designed for live deployment via a webcam and FastAPI interface. This work addresses a meaningful accessibility problem and establishes a practical baseline for further extensions, including full ASL word-level recognition and continuous signing.
 
-Future directions include:
-\begin{itemize}
-    \item Fine-tuning YOLOv8 on a dedicated hand detection dataset for improved localization accuracy.
+Future directions incMediaPipe8gin{itemize}
+    \item Fine-tuning MediaPipe on a dedicated hand detection dataset for improved localization accuracy.
     \item Upgrading the backbone to ResNet-152 or EfficientNet for higher classification capacity.
     \item Extending the vocabulary to dynamic gestures and full ASL words using temporal models (e.g., LSTM or Transformer-based sequence models).
     \item Deploying the system as a mobile application for broader accessibility.
