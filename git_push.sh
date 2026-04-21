@@ -1,3 +1,3 @@
 git add .
-git commit -m "modded pipeling to remove pbar, fixed bug"
+git commit -m "finished procedures."
 git push

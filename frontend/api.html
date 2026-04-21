@@ -619,6 +619,53 @@
 
 </div>
 
+<script type="module">
+// ── MediaPipe client-side hand tracking ──────────────────────────────────────
+import { HandLandmarker, FilesetResolver }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+
+let handLandmarker = null;
+let mpReady = false;
+
+async function initMP() {
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  handLandmarker = await HandLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+      delegate: "GPU"
+    },
+    runningMode: "VIDEO",
+    numHands: 2,
+    minHandDetectionConfidence: 0.5,
+    minHandPresenceConfidence:  0.5,
+    minTrackingConfidence:      0.5,
+  });
+  mpReady = true;
+  console.log("[MP] HandLandmarker ready");
+}
+
+initMP();
+
+// Expose to main script via window
+window._mpDetect = function(videoEl, timestampMs) {
+  if (!mpReady || !handLandmarker) return null;
+  return handLandmarker.detectForVideo(videoEl, timestampMs);
+};
+
+window._mpConnections = CONNECTIONS;
+</script>
+
 <script>
 const BACKEND = 'http://localhost:8000';
 const CAPTURE_INTERVAL_MS = 120;   // ~8fps capture rate sent to backend
@@ -1154,6 +1201,122 @@ log('Repeat threshold: ' + DWELL_REPEAT_MS + 'ms', '');
 
 // ── Expose drawSkeleton for external use ─────────────────────
 window.drawSkeleton = drawSkeleton;
+
+// ── Client-side MP skeleton (replaces backend landmark lag) ─────────────────
+// Backend response only drives: letter, confidence, signal dots, dwell.
+// Skeleton is drawn here from MP JS running locally at 60fps.
+
+let _mpStable = true;   // updated from backend: false when 'hand moving'
+
+// Intercept handleResult to track stability state only (no landmark drawing)
+const _origHandleResult = handleResult;
+handleResult = function(data) {
+  if (data.error === 'hand moving') _mpStable = false;
+  else if (data.error !== 'no hand') _mpStable = true;
+  _origHandleResult(data);
+};
+
+// Override captureLoop: MP runs every frame, backend runs on interval
+captureLoop = function() {
+  if (!capturing) return;
+
+  const CONNS = window._mpConnections || [];
+
+  function drawMP(landmarks, W, H, stable) {
+    ctx.clearRect(0, 0, W, H);
+    if (!landmarks || !landmarks.length) return;
+
+    // mirror x to match video scaleX(-1)
+    const pts = landmarks.map(lm => ({
+      x: lm.x * W,
+      y: lm.y * H
+    }));
+
+    // Bones
+    CONNS.forEach(([a, b]) => {
+      ctx.beginPath();
+      ctx.moveTo(pts[a].x, pts[a].y);
+      ctx.lineTo(pts[b].x, pts[b].y);
+      ctx.strokeStyle = stable ? 'rgba(0,245,255,0.55)' : 'rgba(255,59,92,0.45)';
+      ctx.lineWidth   = 1.5;
+      ctx.shadowColor = stable ? '#00f5ff' : '#ff3b5c';
+      ctx.shadowBlur  = 8;
+      ctx.stroke();
+    });
+
+    // Knuckles
+    [0,5,9,13,17].forEach(i => {
+      ctx.beginPath();
+      ctx.arc(pts[i].x, pts[i].y, 5, 0, Math.PI * 2);
+      ctx.fillStyle   = stable ? 'rgba(0,245,255,0.9)' : 'rgba(255,184,0,0.9)';
+      ctx.shadowColor = stable ? '#00f5ff' : '#ffb800';
+      ctx.shadowBlur  = 12;
+      ctx.fill();
+    });
+
+    // Fingertips
+    [4,8,12,16,20].forEach(i => {
+      ctx.beginPath();
+      ctx.arc(pts[i].x, pts[i].y, 4, 0, Math.PI * 2);
+      ctx.fillStyle   = '#ffffff';
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur  = 10;
+      ctx.fill();
+    });
+
+    // Other joints
+    landmarks.forEach((_, i) => {
+      if ([0,4,5,8,9,12,13,16,17,20].includes(i)) return;
+      ctx.beginPath();
+      ctx.arc(pts[i].x, pts[i].y, 3, 0, Math.PI * 2);
+      ctx.fillStyle   = stable ? 'rgba(0,201,167,0.8)' : 'rgba(255,59,92,0.8)';
+      ctx.shadowColor = stable ? '#00c9a7' : '#ff3b5c';
+      ctx.shadowBlur  = 6;
+      ctx.fill();
+    });
+
+    ctx.shadowBlur = 0;
+  }
+
+  const draw = () => {
+    if (!capturing) return;
+    requestAnimationFrame(draw);
+    if (!video.readyState || video.readyState < 2) return;
+
+    // Sync canvas dims
+    if (canvas.width !== video.videoWidth) {
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+
+    // Run client-side MP every frame
+    const detect = window._mpDetect;
+    if (detect) {
+      const result = detect(video, performance.now());
+      if (result && result.landmarks && result.landmarks.length) {
+        drawMP(result.landmarks[0], canvas.width, canvas.height, _mpStable);
+        idleMsg.style.display = 'none';
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+
+    // Send to backend on interval (classification only)
+    const now = performance.now();
+    if (armed && (now - lastCapture) >= CAPTURE_INTERVAL_MS) {
+      lastCapture = now;
+      sendFrame();
+      fpsFrames++;
+      if (now - fpsLast >= 1000) {
+        fpsEl.textContent = fpsFrames;
+        fpsFrames = 0;
+        fpsLast   = now;
+      }
+    }
+  };
+  requestAnimationFrame(draw);
+};
+
 </script>
 </body>
 </html>
