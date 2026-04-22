@@ -1,3 +1,3 @@
 git add .
-git commit -m "added launch_backend.sh and fixed file name in LaTeX"
+git commit -m "fixed ai flag in LaTeX"
 git push
