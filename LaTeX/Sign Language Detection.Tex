@@ -7,11 +7,11 @@
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
+\usepackage{hyperref}
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{float}
 \usepackage{pdfpages}
-\usepackage{hyperref}
 
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
@@ -41,16 +41,7 @@ Localization and ResNet-50 Classification}
 \maketitle
 
 \begin{abstract}
-American Sign Language (ASL) is the main communication mode for the hearing-impaired community. 
-Bridging the gap between deaf and hearing individuals through automated real-time recognition 
-remains an open engineering challenge. This paper describes a two-stage pipeline we built: 
-hand region localization via MediaPipe, then letter classification using a fine-tuned ResNet-50 
-with a custom head. Training used the public ASL Alphabet dataset from Kaggle, evaluated over 
-26 letter classes. We used cosine annealing with linear warm-up, gradient clipping, and early 
-stopping to keep training stable. Final test accuracy was 99.80\%. The system runs live via 
-webcam with skeleton overlays and letter labels on each frame. A FastAPI server handles inference; 
-a browser frontend connects to it for interactive use. Overall the results show landmark-based 
-detection combined with CNN classification is a viable path for low-latency ASL recognition.
+American Sign Language (ASL) is the primary communication mode for the hearing-impaired community. Real-time automated recognition of ASL gestures remains an open engineering problem. This paper describes a two-stage pipeline: hand region localization via MediaPipe, followed by letter classification with a fine-tuned ResNet-50 backbone and a custom head. Training uses the publicly available ASL Alphabet dataset from Kaggle, evaluated over 26 letter classes. A cosine annealing scheduler with linear warm-up, gradient clipping, and early stopping are applied during training. Test accuracy: 99.80\%. The system runs in real-time on a live webcam feed. Hand skeleton overlays and predicted letter labels are rendered per frame. A FastAPI inference server and browser frontend enable interactive deployment. Landmark-based detection combined with CNN classification is viable for low-latency sign language recognition.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -65,34 +56,22 @@ real-time inference, deep learning, convolutional neural networks
 % -------------------------------------------------------
 \section{Related Work}
 
-Early work on sign language recognition mostly used sensor-based setups —
-data gloves, depth cameras — to get 3D hand pose data \cite{mitra2007}. 
-Results were decent, but the hardware requirements made real deployment pretty impractical.
+Early sign language recognition systems depended on sensor-based hardware: data gloves, depth cameras, 3D pose capture \cite{mitra2007}. These methods worked. They also imposed hardware constraints that blocked practical deployment.
 
-Deep learning shifted things toward image-based approaches. CNNs trained on static hand 
-images got much better at classifying isolated gestures \cite{pigou2015}. Transfer learning 
-from ImageNet-pretrained models like VGG-16, ResNet, and MobileNet helped a lot, especially 
-on smaller domain-specific datasets where training from scratch wasn't an option.
+Deep learning shifted the dominant approach to image-based methods. Convolutional networks trained on static hand images showed strong performance on isolated gesture classification \cite{pigou2015}. Transfer learning from ImageNet-pretrained backbones — VGG-16, ResNet, MobileNet — extended this to smaller, domain-specific datasets with improved accuracy.
 
-Landmark-based tracking has been explored for gesture spotting. But a full two-stage 
-system that handles the entire ASL alphabet in a live-camera setting — that's still 
-relatively unexplored. This work tries to fill that gap with something actually deployable.
+Real-time landmark-based hand tracking has been applied to gesture spotting. End-to-end two-stage systems covering the full ASL alphabet in a live-camera setting are less common. This work targets that gap.
 
 % -------------------------------------------------------
 \section{Dataset}
 
-We used the ASL Alphabet dataset from Kaggle \cite{kaggle_asl}. It has 87,000 labeled images 
-across 29 classes: 26 letters (A--Z) plus \texttt{SPACE}, \texttt{DELETE}, and \texttt{NOTHING}. 
-Images are $200 \times 200$ pixels, RGB.
+The ASL Alphabet dataset \cite{kaggle_asl} is sourced from Kaggle. It contains 87,000 labeled images across 29 classes: 26 letters (A--Z), plus \texttt{SPACE}, \texttt{DELETE}, and \texttt{NOTHING}. Image dimensions: $200 \times 200$ pixels, RGB.
 
-All images were resized to $224 \times 224$ to match ResNet-50's expected input, then 
-normalized with the standard ImageNet mean and std. We split the data into 
-training (70\%), validation (20\%), and test (10\%) using random splitting. A 
-\texttt{\_TransformSubset} wrapper handles the different transforms per split — training 
-gets random horizontal flips and color jitter, validation and test just get deterministic 
-resize and normalize. Batch size was 128; shuffling on for training, off for evaluation.
+Images are resized to $224 \times 224$ to match the ResNet-50 input specification. Normalization uses standard ImageNet mean and standard deviation. The dataset is partitioned randomly: 70\% training, 20\% validation, 10\% test. Random splitting preserves class balance across splits.
 
-Split sizes came out to roughly 60,900 train, 17,400 val, 8,700 test.
+A \texttt{\_TransformSubset} wrapper applies separate transforms to each split. Training images receive random horizontal flipping and color jitter. Validation and test images receive only deterministic resize and normalization. Batch size is 128. Shuffling is enabled for training and disabled for evaluation.
+
+Approximate split sizes: 60,900 training samples, 17,400 validation samples, 8,700 test samples.
 
 % -------------------------------------------------------
 \section{Methodology}
@@ -105,19 +84,17 @@ Split sizes came out to roughly 60,900 train, 17,400 val, 8,700 test.
 \input{results_and_discussion.tex}
 
 \section{Conclusion}
-We built a real-time ASL recognition system using MediaPipe for hand detection and ResNet-50 
-for classification. Test accuracy hit 99.80\% on the Kaggle dataset. The system runs at 
-interactive frame rates through a FastAPI server with a browser frontend. Training used 
-warm-up scheduling, Nesterov SGD, gradient clipping, and early stopping. The temporal 
-voting and dwell-based emission kept output stable in live use. There is real room to grow 
-here — word-level ASL, continuous signing, better generalization to real-world hands.
+
+This paper presents a real-time ASL alphabet recognition system. The two-stage design — MediaPipe hand detection followed by ResNet-50 classification — achieves 99.80\% test accuracy on the Kaggle ASL Alphabet dataset. The system operates at interactive frame rates. Deployment is via a FastAPI inference server and browser-based frontend.
+
+The training pipeline uses warm-up scheduling, Nesterov SGD, gradient clipping, and early stopping. A dwell-based temporal emission mechanism and majority-vote buffer stabilize letter output during live use. The system addresses a real accessibility problem. It is a functional baseline, not a ceiling.
 
 Future directions:
 \begin{itemize}
-    \item Fine-tune MediaPipe on a dedicated hand detection dataset for better localization.
-    \item Swap the backbone to ResNet-152 or EfficientNet for more classification capacity.
-    \item Extend to dynamic gestures and full ASL words using LSTMs or Transformers.
-    \item Package as a mobile app for wider reach.
+    \item Fine-tuning MediaPipe on a dedicated hand detection dataset for improved localization.
+    \item Upgrading the backbone to ResNet-152 or EfficientNet for higher classification capacity.
+    \item Extending to dynamic gestures and full ASL words via temporal models (LSTM, Transformer).
+    \item Mobile deployment for broader accessibility reach.
 \end{itemize}
 
 % -------------------------------------------------------

@@ -1,35 +1,31 @@
-At inference time frames come in from a live webcam feed. Each frame goes through these steps:
+At inference time, frames are captured from a live webcam feed. Each frame is processed as follows:
 
 \begin{enumerate}
-    \item \textbf{Hand Detection:} MediaPipe processes the frame and gives back per-hand landmark lists and bounding regions.
-    \item \textbf{Stability Check:} Euclidean motion between frames is computed. If it's over 8 pixels, the hand is flagged unstable and we skip classification.
-    \item \textbf{Crop and Pad:} The highest-confidence bounding box crop gets padded to a square using edge replication (\texttt{cv2.BORDER\_REPLICATE}). Black-border padding causes distributional shift so we avoid it.
-    \item \textbf{Classification:} Crop is resized to $224 \times 224$, normalized, passed through SLD. Softmax probabilities are computed. Prediction only accepted if confidence is above 0.50.
-    \item \textbf{Temporal Voting:} We maintain a majority-vote buffer of size 10. A letter only gets emitted if 70\%+ of the buffer agrees. This stops isolated mis-classifications from causing jitter.
-    \item \textbf{Cooldown:} 1-second cooldown so the same letter can't fire repeatedly in quick succession.
+    \item \textbf{Hand Detection:} MediaPipe processes the frame. Per-hand landmark lists and bounding regions are returned.
+    \item \textbf{Stability Check:} Euclidean motion between consecutive frames is computed. Motion exceeding 8 pixels flags the hand as unstable. Classification is skipped.
+    \item \textbf{Crop and Pad:} The highest-confidence bounding box crop is padded to a square aspect ratio. Padding uses edge replication (\texttt{cv2.BORDER\_REPLICATE}). Black-border padding introduces distributional shift; edge replication avoids this.
+    \item \textbf{Classification:} The crop is resized to $224 \times 224$ and normalized. It is passed through the SLD model. Softmax probabilities are computed. A prediction is accepted only if confidence exceeds 0.50.
+    \item \textbf{Temporal Voting:} A majority-vote buffer of size 10 is maintained. A letter is emitted only when 70\% or more of the buffer agrees. Isolated mis-classifications do not propagate.
+    \item \textbf{Cooldown:} A 1-second cooldown is enforced. The same letter cannot be emitted repeatedly in rapid succession.
 \end{enumerate}
 
 \subsection{FastAPI Inference Server}
 
-The inference pipeline is exposed as a REST endpoint through a lightweight FastAPI 
-\cite{fastapi} server. It takes JPEG frame uploads from any HTTP client and returns 
-structured JSON.
+A lightweight FastAPI \cite{fastapi} server exposes the inference pipeline as a REST endpoint. JPEG frames are accepted from any HTTP client. Structured JSON predictions are returned.
 
-\textbf{Endpoint:} \texttt{POST /predict} — takes a multipart-encoded JPEG and returns:
+\textbf{Endpoint:} \texttt{POST /predict} accepts a multipart-encoded JPEG image. The response carries:
 
 \begin{itemize}
-    \item \texttt{letter} — the stable voted prediction (A--Z, \texttt{del}, \texttt{nothing}, \texttt{space}), or \texttt{null} if not yet stable.
+    \item \texttt{letter} — stable, voted prediction (A--Z, \texttt{del}, \texttt{nothing}, \texttt{space}). \texttt{null} if not yet stable.
     \item \texttt{confidence} — softmax probability of the top class.
-    \item \texttt{bbox} — bounding box as $[x, y, w, h]$ in pixels.
+    \item \texttt{bbox} — bounding box as $[x, y, w, h]$ in pixel coordinates.
     \item \texttt{handedness} — left or right, from MediaPipe.
-    \item \texttt{motion} — Euclidean motion magnitude in pixels, used for stability gating.
-    \item \texttt{landmarks} — 21 normalized landmark coords for the frontend skeleton.
-    \item \texttt{error} — status string (\texttt{no hand}, \texttt{hand moving}, \texttt{low confidence}, \texttt{not stable yet}, \texttt{cooldown}) when nothing gets emitted.
+    \item \texttt{motion} — Euclidean motion magnitude in pixels. Used for stability gating.
+    \item \texttt{landmarks} — 21 normalized hand landmark coordinates. Used for frontend skeleton rendering.
+    \item \texttt{error} — status string (\texttt{no hand}, \texttt{hand moving}, \texttt{low confidence}, \texttt{not stable yet}, \texttt{cooldown}) when no letter is emitted.
 \end{itemize}
 
-Global state is managed with \texttt{threading.Lock} — prediction buffer, last emitted 
-letter, cooldown timestamp all need to be thread-safe across async workers. CORS is 
-open to all origins for browser access.
+Global state is managed with \texttt{threading.Lock}. This covers the prediction buffer, last emitted letter, and cooldown timestamp. The lock is required for concurrent async workers. CORS is enabled for all origins.
 
 \begin{figure*}[!t]
     \centering
@@ -40,9 +36,6 @@ open to all origins for browser access.
 
 \subsection{Browser Frontend}
 
-Single-page HTML/JS frontend that connects to the FastAPI server. Client-side MediaPipe 
-(Tasks Vision JS SDK) runs at 60\,fps for the skeleton overlay — zero latency on that 
-side. Frames are sent to the backend at around 8\,fps for actual classification. Letter 
-emission uses a dwell mechanism: the prediction has to stay stable for 1.8\,s before it 
-gets appended to the transcript. Repeats need 3.6\,s. Brief hand holds don't trigger 
-spurious output.
+A single-page HTML/JavaScript frontend interfaces with the FastAPI server. Client-side MediaPipe runs via the Tasks Vision JS SDK at 60\,fps. The hand skeleton overlay renders with zero latency at this rate. Frames are forwarded to the backend at approximately 8\,fps for classification.
+
+Letter emission uses a dwell-based mechanism. A predicted letter must remain stable for 1.8\,s before being appended to the transcript. Subsequent repetitions of the same letter require 3.6\,s. Brief hand holds do not produce spurious emissions.

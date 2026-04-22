@@ -1,59 +1,41 @@
 \subsection{System Overview}
 
-The pipeline runs in two sequential stages at inference time:
+Inference proceeds in two sequential stages.
 
 \begin{enumerate}
-    \item \textbf{Hand Detection (MediaPipe):} Each video frame goes into a MediaPipe model, which outputs bounding boxes around any detected hands.
-    \item \textbf{Letter Classification (ResNet-50):} The detected hand crop gets extracted, resized, and fed to the classifier. It returns a probability distribution over 26 ASL letter classes.
+    \item \textbf{Hand Detection (MediaPipe):} Each video frame is passed to MediaPipe. Bounding boxes are returned around detected hand regions.
+    \item \textbf{Letter Classification (ResNet-50):} The hand crop is extracted, resized, and forwarded to the classifier. A probability distribution over 26 ASL letter classes is returned.
 \end{enumerate}
 
-The predicted letter and bounding box are overlaid on the frame for visual feedback.
+The predicted letter and bounding box are overlaid on the original frame.
 
 \subsection{Hand Detection Module}
 
-The \texttt{HandDetector} class wraps MediaPipe's HandLandmarker Tasks API. We run it in 
-\texttt{VIDEO} mode so it can do frame-to-frame tracking using MediaPipe's internal Kalman 
-filter. One thing this mode requires: timestamps have to be strictly monotonically increasing, 
-in real wall-clock milliseconds. A lot of implementations just pass integer counters (1, 2, 3...) 
-which breaks the Kalman filter's velocity model and causes landmark jitter. We use 
-\texttt{time.monotonic\_ns()} to avoid that.
+The \texttt{HandDetector} class wraps the MediaPipe HandLandmarker Tasks API. The operating mode is \texttt{VIDEO}. This mode enables frame-to-frame tracking through MediaPipe's internal Kalman filter.
 
-Detection thresholds are set higher than MediaPipe's defaults. Hand detection and presence 
-confidence at 0.65 (default is 0.50), tracking at 0.55. The defaults are too loose for 
-static-sign ASL — partially occluded hands during transitions cause too many false 
-detections otherwise.
+The Kalman filter requires strictly monotonically increasing real wall-clock millisecond timestamps. Passing bare integer counters (1, 2, 3, \ldots) is a common implementation error. It mis-models velocity. Landmark jitter increases. Timestamps here are derived from \texttt{time.monotonic\_ns()}.
 
-Each frame, the detector returns up to two hand results. For each hand, the raw bounding 
-box comes from the min/max of all 21 landmark coordinates, then expanded 35\% in each 
-dimension (\texttt{expansion=0.35}) to give some context around the edges. That box then 
-gets smoothed across frames using exponential smoothing: $0.3 \cdot \text{prev} + 0.7 \cdot \text{new}$.
+Detection thresholds are raised above MediaPipe defaults. Minimum hand detection and presence confidence: 0.65 (default: 0.50). Tracking confidence: 0.55. The defaults are too permissive for static-sign ASL. Partially-occluded hands during letter transitions produce false detections under the defaults.
 
-Motion magnitude is computed on the \emph{raw} (pre-smoothing) center against the previous 
-smoothed center — not the other way around. If you compute motion after smoothing, a fast-moving 
-hand looks stable because the smoothed center barely moves. That defeats the whole stability 
-gate. Motion uses Euclidean (L2) distance; L1 underestimates diagonal motion by around 30\%.
+Per-frame output is a list of up to two hand results. For each hand, the raw landmark bounding box is computed from the min/max of all 21 normalized landmark coordinates. The box is expanded by 35\% per dimension (\texttt{expansion=0.35}). This provides context around the hand edges. The expanded box is smoothed across frames via exponential smoothing: $0.3 \cdot \text{prev} + 0.7 \cdot \text{new}$.
 
-Tracking state for each hand — previous bbox and center — is stored by hand index, not 
-as one shared variable. A shared variable breaks silently once two hands appear. When a 
-hand disappears, its state gets evicted so the next detection starts fresh. If the clamped 
-ROI has zero area after boundary clamping, that detection is skipped entirely.
+Motion magnitude is computed on the \emph{raw} (pre-smoothing) center against the previous smoothed center. This ordering is deliberate. Computing motion after smoothing causes fast-moving hands to appear stable — the smoothed center barely shifts, defeating the stability gate. Motion is measured as Euclidean (L2) distance. Manhattan (L1) distance under-reports diagonal motion by approximately 30\%.
 
-When multiple hands are detected at inference time, we take the one with the highest 
-handedness classifier score:
+Per-hand tracking state is keyed by hand index. A single shared variable fails silently when two hands appear simultaneously in frame. When a hand disappears, its tracking state is evicted. The next detection initializes from scratch. Zero-area ROI crops after boundary clamping are discarded; they are not passed to the classifier.
+
+When multiple hands are detected at inference time, the detection with the highest handedness classifier score is selected:
 
 \begin{equation}
     \text{det}^* = \arg\max_{d \in \mathcal{D}}\; d.\text{score}
 \end{equation}
 
-The \texttt{HandDetection} dataclass per hand carries: smoothed bbox $(x_1, y_1, x_2, y_2)$, 
-handedness label and score, 21 raw normalized landmarks, the BGR ROI crop, a stability flag, 
-and raw motion magnitude in pixels.
+The \texttt{HandDetection} dataclass carries per hand: smoothed pixel bbox $(x_1, y_1, x_2, y_2)$, handedness label and score, 21 raw normalized landmarks, BGR ROI crop, boolean stability flag, raw motion magnitude in pixels.
 
 \subsection{Classification Model (SLD)}
 
-The Sign Language Detector (\textbf{SLD}) uses a frozen ResNet-50 backbone plus a trainable 
-classification head. The backbone's average pooling gives a 2048-dimensional feature vector. 
-We replace the original FC layer entirely. The head is:
+The Sign Language Detector (\textbf{SLD}) uses a ResNet-50 backbone. All backbone parameters are frozen. A trainable classification head is appended.
+
+The backbone's final average pooling layer outputs a 2048-dimensional feature vector. The original fully-connected layer is discarded entirely. The replacement head is:
 
 \begin{equation}
     \hat{y} = \text{head}(\text{backbone}(x))
@@ -63,35 +45,21 @@ We replace the original FC layer entirely. The head is:
     \text{head}(z) = W_2 \cdot \text{GELU}(\text{Dropout}(\text{LayerNorm}(z) \cdot W_1))
 \end{equation}
 
-where $W_1 \in \mathbb{R}^{2048 \times 512}$ and $W_2 \in \mathbb{R}^{512 \times 29}$, 
-covering all 29 output classes (26 letters plus \texttt{del}, \texttt{nothing}, \texttt{space}).
+$W_1 \in \mathbb{R}^{2048 \times 512}$, $W_2 \in \mathbb{R}^{512 \times 29}$. Output covers 29 classes: 26 letters plus \texttt{del}, \texttt{nothing}, \texttt{space}.
 
-We use \textbf{LayerNorm} at the backbone-to-head boundary instead of BatchNorm. BatchNorm 
-is batch-size sensitive and behaves differently at train vs.\ eval time — that gets unstable 
-when only the head is being updated. LayerNorm normalizes per sample so batch size doesn't 
-matter. \textbf{GELU} is used over ReLU because it's smooth and has nonzero gradients at 
-negative values. \textbf{Dropout} at $p = 0.3$ regularizes the 512-dimensional intermediate.
+LayerNorm is used at the backbone-to-head boundary. BatchNorm is not. BatchNorm is sensitive to batch size. Its behavior differs between train and eval modes. With a frozen backbone and a trainable head only, this instability is unacceptable. LayerNorm normalizes per-sample. It is invariant to batch size.
 
-At inference, the checkpoint is loaded with \texttt{weights\_only=False}. This is intentional 
-— the checkpoint contains optimizer and scheduler state in addition to model weights, so 
-weights-only mode can't load it. The flag also suppresses the PyTorch 2.x deprecation warning.
+GELU is used in place of ReLU. GELU is smooth. Its gradient is non-zero at negative values. Dropout at $p = 0.3$ regularizes the intermediate 512-dimensional representation.
+
+At inference, the checkpoint is loaded via \texttt{torch.load} with \texttt{weights\_only=False}. This is explicit, not incidental. The checkpoint stores optimizer and scheduler state alongside model weights. It cannot be loaded in weights-only mode. The flag also suppresses the PyTorch 2.x deprecation warning and documents intent.
 
 \subsection{Training Configuration}
 
-Training config lives in a \texttt{TRAINING\_CONFIG} dataclass. All hyperparameters are 
-in one place, and command-line args can override them at runtime. Table~\ref{tab:config} 
-has the key settings.
+Training configuration is encapsulated in a dataclass (\texttt{TRAINING\_CONFIG}). All hyperparameters are stored there. Runtime overrides are accepted via command-line arguments. Key settings are listed in Table~\ref{tab:config}.
 
-The data split uses \texttt{random\_split}: 70\% train, 20\% val, 10\% test. Transforms 
-are applied per-split via a \texttt{\_TransformSubset} wrapper. Overwriting 
-\texttt{subset.dataset} directly causes an \texttt{IndexError} — the Subset's indices 
-point into the wrong-sized dataset. Wrapping the Subset itself avoids this. Training 
-images get augmentation; val and test get only deterministic resize and normalization.
+The dataset is partitioned via \texttt{random\_split}: 70\% training, 20\% validation, 10\% test. A \texttt{\_TransformSubset} wrapper is applied to each split. This allows training and evaluation transforms to differ without modifying the underlying dataset object. The naive alternative — overwriting \texttt{subset.dataset} — causes the Subset's indices to point into a wrongly-sized dataset, raising an \texttt{IndexError}. Training images receive augmentation. Validation and test images receive only deterministic resize and normalization.
 
-Per-batch metrics — loss, accuracy, gradient norm — are logged to W\&B at every step 
-via \texttt{wandb.log(..., step=self.global\_step)}. At the epoch level we also log mean 
-gradient norm and gradient clipping ratio (how often the norm exceeded the clip threshold). 
-That gives a direct read on how hard the optimizer is being constrained.
+Per-batch metrics — training loss, accuracy, gradient norm — are logged to W\&B at each step via \texttt{wandb.log(..., step=self.global\_step)}. At epoch level, mean gradient norm and gradient clipping ratio are additionally reported. The clipping ratio is the fraction of batches where the gradient norm exceeded the clip threshold.
 
 \begin{table}[h]
 \caption{Training Hyperparameters}
@@ -117,31 +85,27 @@ Early Stopping Patience & 20 \\
 \end{tabular}
 \end{table}
 
-Colab session limits meant we only ran 3 epochs instead of the configured 200. 
-\texttt{T\_max} and epoch count were overridden at runtime via command-line. The model 
-still converged to competitive accuracy in those 3 epochs — which says something about 
-how well-matched the backbone and dataset are.
+Training ran for 3 epochs. Google Colab session limits constrained this. The configured maximum was 200. \texttt{T\_max} and epoch count were overridden via command-line at runtime. Results are discussed in Section~\ref{sec:results}.
 
 \subsubsection{Learning Rate Schedule}
 
-Cosine annealing with a linear warm-up. During warm-up (epochs $0$ to $T_w - 1$), 
-learning rate goes up linearly:
+A cosine annealing schedule with linear warm-up is used. Warm-up spans epochs $0$ to $T_w - 1$. During warm-up, the learning rate increases linearly:
 
 \begin{equation}
     \eta_t = \eta_{\text{base}} \cdot \frac{t+1}{T_w}
 \end{equation}
 
-After that, cosine decay kicks in:
+After warm-up, cosine decay applies:
 
 \begin{equation}
     \eta_t = \eta_{\min} + \frac{\eta_{\text{base}} - \eta_{\min}}{2} \left(1 + \cos\left(\pi \cdot \frac{t - T_w}{T_{\max} - T_w}\right)\right)
 \end{equation}
 
-Warm-up prevents instability early on; cosine decay settles the LR smoothly near convergence.
+Early instability is suppressed by the warm-up phase. The learning rate settles toward $\eta_{\min}$ near convergence.
 
 \subsubsection{Gradient Clipping}
 
-Gradient norm clipping at $\tau = 1.0$ after each backward pass:
+Gradient norm clipping is applied after each backward pass. Threshold: $\tau = 1.0$. Exploding gradients are thereby prevented:
 
 \begin{equation}
     \mathbf{g} \leftarrow \mathbf{g} \cdot \min\!\left(1,\ \frac{\tau}{\|\mathbf{g}\|_2}\right)
@@ -149,15 +113,8 @@ Gradient norm clipping at $\tau = 1.0$ after each backward pass:
 
 \subsubsection{Early Stopping}
 
-Training stops if val accuracy doesn't improve for 20 consecutive epochs. Best checkpoint 
-— model, optimizer, scheduler, best accuracy — is saved whenever a new peak is hit. 
-That checkpoint gets reloaded before final test evaluation, so test metrics reflect the 
-best generalization point, not just the last epoch.
+Training halts if validation accuracy fails to improve for 20 consecutive epochs. The best checkpoint is written to disk at each new peak. It stores model weights, optimizer state, scheduler state, and best accuracy. At training completion, this checkpoint is reloaded before test evaluation. Test metrics reflect the best generalization point, not the final epoch.
 
 \subsection{Experiment Tracking}
 
-All runs logged via W\&B \cite{wandb}. Per-batch: loss, accuracy, gradient norm. 
-Per-epoch: val loss and accuracy, learning rate, mean gradient norm, clipping ratio. 
-Final test metrics go in as summary values. The full \texttt{TRAINING\_CONFIG} — 
-optimizer kwargs, scheduler kwargs, dataloader configs — gets serialized into the 
-W\&B run config so runs are exactly reproducible.
+Training runs are logged via Weights \& Biases (W\&B) \cite{wandb}. Per-batch metrics: training loss, accuracy, gradient norm. Per-epoch metrics: validation loss and accuracy, learning rate, mean gradient norm, gradient clipping ratio. Test loss and accuracy are logged as summary metrics at run end. The full \texttt{TRAINING\_CONFIG} — optimizer kwargs, scheduler kwargs, dataloader configs — is serialized into the W\&B run config.
