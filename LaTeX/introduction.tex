@@ -10,7 +10,8 @@ detection frameworks have opened new avenues for gesture recognition. Systems
 that can process live video frames and return a classified gesture label within 
 milliseconds represent a meaningful step toward accessible communication technology.
 In the first stage, a MediaPipe hand tracking module localizes the hand region within each 
-camera frame, producing a tight bounding box crop. In the second stage, a fine-tuned 
+camera frame, producing a tight bounding box crop(invisible to the user) and a skeleton tracking system(visible). 
+In the second stage, a fine-tuned 
 ResNet-50 \cite{he2016} backbone classifies the cropped hand image into one of 26 ASL 
 alphabet letters. The result is overlaid on the live video stream in real time.
 

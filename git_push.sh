@@ -1,3 +1,3 @@
 git add .
-git commit -m "finished procedures. fixed api file. added ppt"
+git commit -m "added launch_backend.sh and fixed file name in LaTeX"
 git push
