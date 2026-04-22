@@ -1,0 +1,56 @@
+\label{sec:results}
+
+\textit{Training was conducted on a Google Colab T4 GPU. Due to session time limits 
+and compute availability, fine-tuning was run for 3 epochs rather than the full 
+scheduled 200. The results below reflect this constrained run.}
+
+The model was trained for 3 epochs with batch size 128 using the SGD (Nesterov) optimizer 
+and the cosine annealing schedule with linear warm-up described in Section~IV. 
+Table~\ref{tab:results} summarizes the final performance metrics.
+
+\begin{table}[h]
+\caption{Training and Evaluation Results}
+\label{tab:results}
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Split} & \textbf{Loss} & \textbf{Accuracy (\%)} \\
+\midrule
+Train (epoch 3) & 0.0474 & 99.03 \\
+Validation      & 0.0099 & 99.86 \\
+Test            & 0.0096 & 99.80 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The model reached \textbf{99.80\%} test accuracy in 3 epochs, rising from 64.41\% 
+validation accuracy at epoch 1 to 99.86\% by epoch 3. Given the training was 
+terminated far short of the configured maximum, these numbers are largely a 
+reflection of the ImageNet-pretrained backbone's strong prior and the relatively 
+constrained nature of the dataset — controlled backgrounds, consistent framing, 
+single hand per image — rather than a claim of general robustness. W\&B logs 
+confirmed a mean gradient norm of 1.64 and a gradient clipping ratio of 0.77 at 
+the final epoch, indicating the clipping constraint was active and the optimization 
+trajectory was still steep at termination. A full run to convergence would likely 
+yield marginal additional gains on this dataset but would be more informative for 
+harder, real-world evaluation sets.
+
+
+\begin{figure*}[!t]
+    \centering
+    \includegraphics[width=\textwidth]{Training Plots}
+    \caption{Training and validation loss/accuracy curves across steps along with gradient norm, logged via Weights \& Biases.}
+    \label{fig:training}
+\end{figure*}
+
+The primary challenge for real-world deployment remains generalization to hand 
+appearances outside the training distribution — varied skin tones, lighting 
+conditions, and cluttered backgrounds not represented in the Kaggle dataset. 
+The two-stage architecture mitigates this partially by isolating the classifier 
+from background noise via the MediaPipe ROI crop.
+
+\subsection{Colab cell output}
+For reference purposes, we have attached the colab cell output 
+\includepdf[pages=1-2]{colab_out.pdf}
+
+% -------------------------------------------------------

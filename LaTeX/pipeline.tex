@@ -1,0 +1,49 @@
+At inference time, frames are captured from a live webcam feed. Each frame undergoes the following steps:
+
+\begin{enumerate}
+    \item \textbf{Hand Detection:} MediaPipe processes the frame and returns per-hand landmark lists and bounding regions.
+    \item \textbf{Stability Check:} Euclidean motion between consecutive frames is computed. If motion exceeds a threshold of 8 pixels, the hand is flagged as unstable and classification is skipped.
+    \item \textbf{Crop and Pad:} The highest-confidence bounding box crop is padded to a square aspect ratio using edge replication (\texttt{cv2.BORDER\_REPLICATE}) to avoid distributional shift from black-border padding.
+    \item \textbf{Classification:} The crop is resized to $224 \times 224$, normalized, and passed through the SLD model. Softmax probabilities are computed and the prediction is accepted only if confidence exceeds a threshold of 0.50.
+    \item \textbf{Temporal Voting:} A majority-vote buffer of size 10 is maintained. A letter is emitted only if 70\% or more of the buffer agrees, preventing jitter from isolated mis-classifications.
+    \item \textbf{Cooldown:} A 1-second cooldown prevents the same letter from being emitted repeatedly in rapid succession.
+\end{enumerate}
+
+\subsection{FastAPI Inference Server}
+
+A lightweight FastAPI \cite{fastapi} server exposes the inference pipeline as a REST endpoint. 
+The server accepts JPEG frame uploads from any HTTP client and returns structured 
+JSON predictions.
+
+\textbf{Endpoint:} \texttt{POST /predict} — accepts a multipart-encoded JPEG image and returns:
+
+\begin{itemize}
+    \item \texttt{letter} — the stable, voted prediction (A--Z, \texttt{del}, \texttt{nothing}, \texttt{space}), or \texttt{null} if the prediction is not yet stable.
+    \item \texttt{confidence} — softmax probability of the top class.
+    \item \texttt{bbox} — bounding box as $[x, y, w, h]$ in pixel coordinates.
+    \item \texttt{handedness} — left or right hand classification from MediaPipe.
+    \item \texttt{motion} — Euclidean motion magnitude in pixels, used for stability gating.
+    \item \texttt{landmarks} — 21 normalized hand landmark coordinates for frontend skeleton rendering.
+    \item \texttt{error} — a status string (\texttt{no hand}, \texttt{hand moving}, \texttt{low confidence}, \texttt{not stable yet}, \texttt{cooldown}) when no letter is emitted.
+\end{itemize}
+
+The server uses thread-safe global state (guarded by \texttt{threading.Lock}) to manage 
+the prediction buffer, last emitted letter, and cooldown timestamp across concurrent 
+async workers. CORS is enabled for all origins to support browser-based frontends.
+
+\begin{figure*}[!t]
+    \centering
+    \includegraphics[width=\textwidth]{api_ss}
+    \caption{FastAPI \texttt{/predict} endpoint response for a live hand frame, showing letter, confidence, bounding box, handedness, motion, and landmark fields.}
+    \label{fig:api}
+\end{figure*}
+
+\subsection{Browser Frontend}
+
+A single-page HTML/JavaScript frontend connects to the FastAPI server and provides 
+real-time visual feedback. Client-side MediaPipe (via the Tasks Vision JS SDK) runs 
+at 60\,fps to render the hand skeleton overlay with zero latency, while frames are 
+sent to the backend at approximately 8\,fps for classification. The UI includes a 
+dwell-based letter emission mechanism: a predicted letter must remain stable for 
+1.8\,s before being appended to the output transcript, with subsequent repetitions 
+requiring 3.6\,s. This prevents spurious emissions from brief hand holds.
