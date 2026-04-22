@@ -17,13 +17,24 @@ The Kalman filter requires strictly monotonically increasing real wall-clock mil
 
 Detection thresholds are raised above MediaPipe defaults. Minimum hand detection and presence confidence: 0.65 (default: 0.50). Tracking confidence: 0.55. The defaults are too permissive for static-sign ASL. Partially-occluded hands during letter transitions produce false detections under the defaults.
 
-Per-frame output is a list of up to two hand results. For each hand, the raw landmark bounding box is computed from the min/max of all 21 normalized landmark coordinates. The box is expanded by 35\% per dimension (\texttt{expansion=0.35}). This provides context around the hand edges. The expanded box is smoothed across frames via exponential smoothing: $0.3 \cdot \text{prev} + 0.7 \cdot \text{new}$.
+Per-frame output is a list of two hand results. For each hand, 
+the raw landmark bounding box is computed from the min/max of all 21 normalized landmark coordinates. 
+The box is expanded by 35\% per dimension (\texttt{expansion=0.35}). 
+This gives environmental context to the images of hands detected. 
+This makes the job of classification easier for the Pre-Trained Resnet Backbone.
+The expanded box is then smoothened across frames via exponential 
+smoothing: $0.15 \cdot \text{prev} + 0.85 \cdot \text{new}$.
 
-Motion magnitude is computed on the \emph{raw} (pre-smoothing) center against the previous smoothed center. This ordering is deliberate. Computing motion after smoothing causes fast-moving hands to appear stable — the smoothed center barely shifts, defeating the stability gate. Motion is measured as Euclidean (L2) distance. Manhattan (L1) distance under-reports diagonal motion by approximately 30\%.
+Motion magnitude is computed on the \emph{raw} (pre-smoothing) center against the previous smoothed center. 
+Motion is measured as Euclidean (L2) distance. Manhattan (L1) distance under-reports diagonal motion by approximately 30\%.
 
-Per-hand tracking state is keyed by hand index. A single shared variable fails silently when two hands appear simultaneously in frame. When a hand disappears, its tracking state is evicted. The next detection initializes from scratch. Zero-area ROI crops after boundary clamping are discarded; they are not passed to the classifier.
-
-When multiple hands are detected at inference time, the detection with the highest handedness classifier score is selected:
+Per-hand tracking is by keying hand-index. 
+A single shared variable fails silently when two hands appear in the same frame. When a hand goes out of frame, 
+its tracking state vanishes with it. 
+The next detection starts from scratch. Zero-area ROI crops after boundary clamping are thrown away; they are not 
+passed to the classifier.
+When multiple hands are detected at inference time, 
+the detection with the highest handedness classifier score is selected:
 
 \begin{equation}
     \text{det}^* = \arg\max_{d \in \mathcal{D}}\; d.\text{score}
@@ -57,9 +68,9 @@ At inference, the checkpoint is loaded via \texttt{torch.load} with \texttt{weig
 
 Training configuration is encapsulated in a dataclass (\texttt{TRAINING\_CONFIG}). All hyperparameters are stored there. Runtime overrides are accepted via command-line arguments. Key settings are listed in Table~\ref{tab:config}.
 
-The dataset is partitioned via \texttt{random\_split}: 70\% training, 20\% validation, 10\% test. A \texttt{\_TransformSubset} wrapper is applied to each split. This allows training and evaluation transforms to differ without modifying the underlying dataset object. The naive alternative — overwriting \texttt{subset.dataset} — causes the Subset's indices to point into a wrongly-sized dataset, raising an \texttt{IndexError}. Training images receive augmentation. Validation and test images receive only deterministic resize and normalization.
+The dataset is partitioned via \texttt{random\_split}: 70\% training, 20\% validation, 10\% test. A \texttt{\_TransformSubset} wrapper is applied to each split. This allows training and evaluation transforms to differ without modifying the underlying dataset object. The naive alternative -- overwriting \texttt{subset.dataset} -- causes the Subset's indices to point into a wrongly-sized dataset, raising an \texttt{IndexError}. Training images receive augmentation. Validation and test images receive only deterministic resize and normalization.
 
-Per-batch metrics — training loss, accuracy, gradient norm — are logged to W\&B at each step via \texttt{wandb.log(..., step=self.global\_step)}. At epoch level, mean gradient norm and gradient clipping ratio are additionally reported. The clipping ratio is the fraction of batches where the gradient norm exceeded the clip threshold.
+Per-batch metrics -- training loss, accuracy, gradient norm -- are logged to W\&B at each step via \texttt{wandb.log(..., step=self.global\_step)}. At epoch level, mean gradient norm and gradient clipping ratio are additionally reported. The clipping ratio is the fraction of batches where the gradient norm exceeded the clip threshold.
 
 \begin{table}[h]
 \caption{Training Hyperparameters}
@@ -117,4 +128,4 @@ Training halts if validation accuracy fails to improve for 20 consecutive epochs
 
 \subsection{Experiment Tracking}
 
-Training runs are logged via Weights \& Biases (W\&B) \cite{wandb}. Per-batch metrics: training loss, accuracy, gradient norm. Per-epoch metrics: validation loss and accuracy, learning rate, mean gradient norm, gradient clipping ratio. Test loss and accuracy are logged as summary metrics at run end. The full \texttt{TRAINING\_CONFIG} — optimizer kwargs, scheduler kwargs, dataloader configs — is serialized into the W\&B run config.
+Training runs are logged via Weights \& Biases (W\&B) \cite{wandb}. Per-batch metrics: training loss, accuracy, gradient norm. Per-epoch metrics: validation loss and accuracy, learning rate, mean gradient norm, gradient clipping ratio. Test loss and accuracy are logged as summary metrics at run end. The full \texttt{TRAINING\_CONFIG} -- optimizer kwargs, scheduler kwargs, dataloader configs -- is serialized into the W\&B run config.

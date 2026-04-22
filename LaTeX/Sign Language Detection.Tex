@@ -65,11 +65,21 @@ Real-time landmark-based hand tracking has been applied to gesture spotting. End
 % -------------------------------------------------------
 \section{Dataset}
 
-The ASL Alphabet dataset \cite{kaggle_asl} is sourced from Kaggle. It contains 87,000 labeled images across 29 classes: 26 letters (A--Z), plus \texttt{SPACE}, \texttt{DELETE}, and \texttt{NOTHING}. Image dimensions: $200 \times 200$ pixels, RGB.
+The ASL Alphabet dataset \cite{kaggle_asl} was found on Kaggle. 
+It contains 87,000 labeled images across 29 classes: 26 letters (A--Z), plus \texttt{SPACE}, 
+\texttt{DELETE}, and \texttt{NOTHING}.
 
-Images are resized to $224 \times 224$ to match the ResNet-50 input specification. Normalization uses standard ImageNet mean and standard deviation. The dataset is partitioned randomly: 70\% training, 20\% validation, 10\% test. Random splitting preserves class balance across splits.
+Images are resized to $224 \times 224$ to match the ResNet-50 pre-trained weights. 
+Normalization was done using standard ImageNet scheme and settings.
+The dataset is partitioned randomly: 70\% training, 20\% validation, 10\% test using random-split. 
+Random splitting preserves class balance across split.
 
-A \texttt{\_TransformSubset} wrapper applies separate transforms to each split. Training images receive random horizontal flipping and color jitter. Validation and test images receive only deterministic resize and normalization. Batch size is 128. Shuffling is enabled for training and disabled for evaluation.
+A \texttt{\_TransformSubset} wrapper applies separate transforms to each split. To increase data diversity,
+Training images were flipped randomly, given jitters etc. 
+
+Validation and test images receive only deterministic resize and normalization. 
+Batch size was set 128 to accomodate for resource and compute constraints. 
+Shuffling is enabled for training and disabled for evaluation.
 
 Approximate split sizes: 60,900 training samples, 17,400 validation samples, 8,700 test samples.
 
