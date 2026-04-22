@@ -1,17 +1,23 @@
-At inference time, frames are captured from a live webcam feed. Each frame is processed as follows:
-
+At the time of scanning, frames are captured online via a live webcam feed and passed into a classification
+pipeline that follows this structure
 \begin{enumerate}
-    \item \textbf{Hand Detection:} MediaPipe processes the frame. Per-hand landmark lists and bounding regions are returned.
-    \item \textbf{Stability Check:} Euclidean motion between consecutive frames is computed. Motion exceeding 8 pixels flags the hand as unstable. Classification is skipped.
-    \item \textbf{Crop and Pad:} The highest-confidence bounding box crop is padded to a square aspect ratio. Padding uses edge replication (\texttt{cv2.BORDER\_REPLICATE}). Black-border padding introduces distributional shift; edge replication avoids this.
-    \item \textbf{Classification:} The crop is resized to $224 \times 224$ and normalized. It is passed through the SLD model. Softmax probabilities are computed. A prediction is accepted only if confidence exceeds 0.50.
-    \item \textbf{Temporal Voting:} A majority-vote buffer of size 10 is maintained. A letter is emitted only when 70\% or more of the buffer agrees. Isolated mis-classifications do not propagate.
-    \item \textbf{Cooldown:} A 1-second cooldown is enforced. The same letter cannot be emitted repeatedly in rapid succession.
+    \item \textbf{Hand Detection:} Media pipe detects the hand and contextual environment.
+    \item \textbf{Stability Check:} Euclidean motion between consecutive frames is used to flag instability
+    \item \textbf{Crop and Pad:} This is invisible to the user, the box that establishes context is not visible.
+    However, the skeleton tracing the landmarks of the detected hand is available to the user.
+    \item \textbf{Classification:} The crop is resized to $224 \times 224$ and normalized. 
+    It is passed through the SLD model which predicts several possible 
+    classifications. A prediction is accepted only if confidence exceeds 0.50.
+    \item \textbf{Temporal Voting:} A majority-vote buffer of size 10 is maintained. 
+    A letter is emitted only when 70\% or more of the buffer agrees. 
+    \item \textbf{Cooldown:} A 1-second cooldown is enforced. 
+    The same letter cannot be emitted repeatedly in rapid succession.
 \end{enumerate}
 
 \subsection{FastAPI Inference Server}
 
-A lightweight FastAPI \cite{fastapi} server exposes the inference pipeline as a REST endpoint. JPEG frames are accepted from any HTTP client. Structured JSON predictions are returned.
+The Inference Pipeline is available through a lightweight FastAPI \cite{fastapi} server as a REST endpoint.
+Any HTTP client can send JPEG images to the server, while JSON output will be received.
 
 \textbf{Endpoint:} \texttt{POST /predict} accepts a multipart-encoded JPEG image. The response carries:
 
@@ -25,7 +31,7 @@ A lightweight FastAPI \cite{fastapi} server exposes the inference pipeline as a 
     \item \texttt{error} — status string (\texttt{no hand}, \texttt{hand moving}, \texttt{low confidence}, \texttt{not stable yet}, \texttt{cooldown}) when no letter is emitted.
 \end{itemize}
 
-Global state is managed with \texttt{threading.Lock}. This covers the prediction buffer, last emitted letter, and cooldown timestamp. The lock is required for concurrent async workers. CORS is enabled for all origins.
+The Global State consists of several locks, namely \texttt{threading.Lock}, including those related to the Prediction Buffer, Last Emited Letter, and Cooldown Time Stamp. CORS is enabled for all origins.
 
 \begin{figure*}[!t]
     \centering
@@ -36,6 +42,11 @@ Global state is managed with \texttt{threading.Lock}. This covers the prediction
 
 \subsection{Browser Frontend}
 
-A single-page HTML/JavaScript frontend interfaces with the FastAPI server. Client-side MediaPipe runs via the Tasks Vision JS SDK at 60\,fps. The hand skeleton overlay renders with zero latency at this rate. Frames are forwarded to the backend at approximately 8\,fps for classification.
+Single-page HTML/JS frontend, connects to the FastAPI server. 
+Client-side MediaPipe runs through the Tasks Vision JS SDK at 60\,fps -- for the skeleton 
+overlay, which renders with zero latency. 
+The actual classification frames go to the backend at around 8\,fps.
 
-Letter emission uses a dwell-based mechanism. A predicted letter must remain stable for 1.8\,s before being appended to the transcript. Subsequent repetitions of the same letter require 3.6\,s. Brief hand holds do not produce spurious emissions.
+For letter emission we use a dwell-based approach. 
+A letter has to stay stable for 1.8\,s before it gets added to the transcript. 
+If the same letter repeats, it needs 3.6\,s. This way brief hand holds don't accidentally trigger output.

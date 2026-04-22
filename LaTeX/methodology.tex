@@ -31,22 +31,24 @@ Motion is measured as Euclidean (L2) distance. Manhattan (L1) distance under-rep
 Per-hand tracking is by keying hand-index. 
 A single shared variable fails silently when two hands appear in the same frame. When a hand goes out of frame, 
 its tracking state vanishes with it. 
-The next detection starts from scratch. Zero-area ROI crops after boundary clamping are thrown away; they are not 
+The next detection starts from scratch. Zero-area ROI crops after boundary clamping are thrown away; 
+they are not 
 passed to the classifier.
 When multiple hands are detected at inference time, 
-the detection with the highest handedness classifier score is selected:
+the detection with the highest classifier score is selected:
 
 \begin{equation}
     \text{det}^* = \arg\max_{d \in \mathcal{D}}\; d.\text{score}
 \end{equation}
 
-The \texttt{HandDetection} dataclass carries per hand: smoothed pixel bbox $(x_1, y_1, x_2, y_2)$, handedness label and score, 21 raw normalized landmarks, BGR ROI crop, boolean stability flag, raw motion magnitude in pixels.
-
 \subsection{Classification Model (SLD)}
 
-The Sign Language Detector (\textbf{SLD}) uses a ResNet-50 backbone. All backbone parameters are frozen. A trainable classification head is appended.
+The Sign Language Detector (\textbf{SLD}) uses a ResNet-50 backbone. 
+All backbone parameters were frozen, meaning gradient tracking for them
+was disabled. A custom trainable classification head was added to the backbone.
 
-The backbone's final average pooling layer outputs a 2048-dimensional feature vector. The original fully-connected layer is discarded entirely. The replacement head is:
+The backbone's final average pooling layer outputs a 2048-dimensional feature vector. 
+The original fully-connected layer is discarded entirely. The replacement head is:
 
 \begin{equation}
     \hat{y} = \text{head}(\text{backbone}(x))
@@ -62,13 +64,19 @@ LayerNorm is used at the backbone-to-head boundary. BatchNorm is not. BatchNorm 
 
 GELU is used in place of ReLU. GELU is smooth. Its gradient is non-zero at negative values. Dropout at $p = 0.3$ regularizes the intermediate 512-dimensional representation.
 
-At inference, the checkpoint is loaded via \texttt{torch.load} with \texttt{weights\_only=False}. This is explicit, not incidental. The checkpoint stores optimizer and scheduler state alongside model weights. It cannot be loaded in weights-only mode. The flag also suppresses the PyTorch 2.x deprecation warning and documents intent.
+At inference, the checkpoint is loaded via \texttt{torch.load} with \texttt{weights\_only=False}. 
+
+This is explicit. The checkpoint stores optimizer and scheduler state as well as model weights. 
+It cannot be loaded in weights-only mode. 
 
 \subsection{Training Configuration}
 
-Training configuration is encapsulated in a dataclass (\texttt{TRAINING\_CONFIG}). All hyperparameters are stored there. Runtime overrides are accepted via command-line arguments. Key settings are listed in Table~\ref{tab:config}.
+Training configuration is kept in a dataclass (\texttt{TRAINING\_CONFIG}). 
 
-The dataset is partitioned via \texttt{random\_split}: 70\% training, 20\% validation, 10\% test. A \texttt{\_TransformSubset} wrapper is applied to each split. This allows training and evaluation transforms to differ without modifying the underlying dataset object. The naive alternative -- overwriting \texttt{subset.dataset} -- causes the Subset's indices to point into a wrongly-sized dataset, raising an \texttt{IndexError}. Training images receive augmentation. Validation and test images receive only deterministic resize and normalization.
+The dataset is split apart via \texttt{random\_split}: 70\% training, 20\% validation, 10\% test. 
+A \texttt{\_TransformSubset} wrapper is applied to each split. 
+This allows training and evaluation transforms to differ without modifying the underlying dataset object. 
+The naive alternative -- overwriting \texttt{subset.dataset} -- causes the Subset's indices to point into a wrongly-sized dataset, raising an \texttt{IndexError}. Training images receive augmentation. Validation and test images receive only deterministic resize and normalization.
 
 Per-batch metrics -- training loss, accuracy, gradient norm -- are logged to W\&B at each step via \texttt{wandb.log(..., step=self.global\_step)}. At epoch level, mean gradient norm and gradient clipping ratio are additionally reported. The clipping ratio is the fraction of batches where the gradient norm exceeded the clip threshold.
 
@@ -116,16 +124,15 @@ Early instability is suppressed by the warm-up phase. The learning rate settles 
 
 \subsubsection{Gradient Clipping}
 
-Gradient norm clipping is applied after each backward pass. Threshold: $\tau = 1.0$. Exploding gradients are thereby prevented:
-
+Gradient norm clipping is applied after each backward pass. Threshold: $\tau = 1.0$. 
 \begin{equation}
-    \mathbf{g} \leftarrow \mathbf{g} \cdot \min\!\left(1,\ \frac{\tau}{\|\mathbf{g}\|_2}\right)
+    {g} \leftarrow {g} \cdot \min\!\left(1,\ \frac{\tau}{\|{g}\|_2}\right)
 \end{equation}
 
 \subsubsection{Early Stopping}
-
-Training halts if validation accuracy fails to improve for 20 consecutive epochs. The best checkpoint is written to disk at each new peak. It stores model weights, optimizer state, scheduler state, and best accuracy. At training completion, this checkpoint is reloaded before test evaluation. Test metrics reflect the best generalization point, not the final epoch.
-
+This was an implemented feature which did not come in handy, due to compute limitations.
 \subsection{Experiment Tracking}
-
-Training runs are logged via Weights \& Biases (W\&B) \cite{wandb}. Per-batch metrics: training loss, accuracy, gradient norm. Per-epoch metrics: validation loss and accuracy, learning rate, mean gradient norm, gradient clipping ratio. Test loss and accuracy are logged as summary metrics at run end. The full \texttt{TRAINING\_CONFIG} -- optimizer kwargs, scheduler kwargs, dataloader configs -- is serialized into the W\&B run config.
+Weights \& Biases (W\&B) \cite{wandb} was used to log training and validation metrics. 
+Per-batch metrics include training loss, accuracy, gradient norm. 
+validation loss and accuracy, learning rate, mean gradient norm were logged per epoch, along with
+gradient clipping ratio. Test loss and accuracy are logged as summary metrics at run end. 
