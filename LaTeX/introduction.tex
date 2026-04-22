@@ -1,24 +1,23 @@
-Sign language serves as the primary mode of communication for over 
-70 million deaf and hard-of-hearing individuals worldwide \cite{who2021}. 
-American Sign Language (ASL), used predominantly in North America, employs a 
-rich vocabulary of hand gestures and finger-spelling to convey words and concepts. 
-Despite its widespread use, the absence of real-time automated translation tools 
-remains a critical barrier in everyday communication with the hearing majority.
+Sign language is the primary communication mode for over 70 million deaf and 
+hard-of-hearing people worldwide \cite{who2021}. ASL specifically — used mostly 
+in North America — uses hand gestures and finger-spelling to express words and 
+concepts. Despite how widely it's used, there are almost no real-time automated 
+translation tools available. That gap makes everyday communication with the 
+hearing majority significantly harder than it needs to be.
 
-Recent advances in convolutional neural networks (CNNs) and real-time object 
-detection frameworks have opened new avenues for gesture recognition. Systems 
-that can process live video frames and return a classified gesture label within 
-milliseconds represent a meaningful step toward accessible communication technology.
-In the first stage, a MediaPipe hand tracking module localizes the hand region within each 
-camera frame, producing a tight bounding box crop(invisible to the user) and a skeleton tracking system(visible). 
-In the second stage, a fine-tuned 
-ResNet-50 \cite{he2016} backbone classifies the cropped hand image into one of 26 ASL 
-alphabet letters. The result is overlaid on the live video stream in real time.
+CNNs and real-time object detection frameworks have opened up new options for 
+gesture recognition. Systems that can classify a gesture from a live video frame 
+in milliseconds are a meaningful step toward accessible communication technology. 
+Our approach uses two stages: first, a MediaPipe hand tracking module localizes 
+the hand in each camera frame, producing a tight bounding box crop (not visible 
+to the user) and a skeleton overlay (visible). Second, a fine-tuned ResNet-50 
+\cite{he2016} classifies the cropped image into one of 26 ASL alphabet letters. 
+The result is overlaid on the live stream in real time.
 
-Our contributions are as follows:
+Our contributions:
 \begin{itemize}
     \item A modular training pipeline with configurable optimizer, scheduler, and early stopping, implemented in PyTorch.
-    \item Integration of MediaPipe-based hand detection with a ResNet-50 classification head for end-to-end ASL letter recognition.
+    \item MediaPipe-based hand detection integrated with a ResNet-50 classification head for end-to-end ASL letter recognition.
     \item A real-time inference module with webcam integration and visual feedback.
-    \item A FastAPI web interface enabling browser-based interaction with the live pipeline.
+    \item A FastAPI web interface for browser-based interaction with the live pipeline.
 \end{itemize}

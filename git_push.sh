@@ -1,3 +1,3 @@
 git add .
-git commit -m "fixed ai flag in LaTeX"
+git commit -m "fixed ai flag in LaTeX ---> attempt 2"
 git push
