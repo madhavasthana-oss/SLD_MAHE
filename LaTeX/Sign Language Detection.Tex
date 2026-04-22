@@ -95,18 +95,23 @@ Approximate split sizes: 60,900 training samples, 17,400 validation samples, 8,7
 
 \section{Conclusion}
 
-This paper presents a real-time ASL alphabet recognition system. The two-stage design — MediaPipe hand detection followed by ResNet-50 classification — achieves 99.80\% test accuracy on the Kaggle ASL Alphabet dataset. The system operates at interactive frame rates. Deployment is via a FastAPI inference server and browser-based frontend.
+This paper presents a real-time ASL alphabet recognition system combining MediaPipe 
+hand detection with ResNet-50 classification. Test accuracy was 99.80\% on the Kaggle 
+ASL Alphabet dataset. The system runs at interactive frame rates through a FastAPI 
+server and browser frontend.
 
-The training pipeline uses warm-up scheduling, Nesterov SGD, gradient clipping, and early stopping. A dwell-based temporal emission mechanism and majority-vote buffer stabilize letter output during live use. The system addresses a real accessibility problem. It is a functional baseline, not a ceiling.
+Training used warm-up scheduling, Nesterov SGD, gradient clipping, and early stopping. 
+Letter output is stabilized in live use by a dwell-based emission mechanism and a 
+majority-vote buffer. The work addresses a real accessibility problem and serves as 
+a functional baseline for further development.
 
 Future directions:
 \begin{itemize}
-    \item Fine-tuning MediaPipe on a dedicated hand detection dataset for improved localization.
-    \item Upgrading the backbone to ResNet-152 or EfficientNet for higher classification capacity.
-    \item Extending to dynamic gestures and full ASL words via temporal models (LSTM, Transformer).
-    \item Mobile deployment for broader accessibility reach.
+    \item Fine-tune MediaPipe on a dedicated hand detection dataset for better localization.
+    \item Upgrade the backbone to ResNet-152 or EfficientNet for more classification capacity.
+    \item Extend to dynamic gestures and full ASL words using temporal models (LSTM, Transformer).
+    \item Deploy as a mobile app for wider accessibility.
 \end{itemize}
-
 % -------------------------------------------------------
 \begin{thebibliography}{00}
 
